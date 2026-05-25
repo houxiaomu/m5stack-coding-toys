@@ -21,6 +21,8 @@ The background daemon (`m5ctd`) starts on demand and exits when idle.
 m5ct --version
 m5ct version
 m5ct version --json
+m5ctd --version
+m5ct-statusline --version
 m5ct status
 ```
 
