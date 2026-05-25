@@ -1,7 +1,7 @@
 import type { Socket } from 'node:net'
 import type { DeviceManager, DriftEvent, ManagerState } from './device-manager.js'
 import { makeLogger } from './logger.js'
-import { runtimeInfo, type RuntimeInfo } from './version.js'
+import { type RuntimeInfo, runtimeInfo } from './version.js'
 
 const log = makeLogger('control')
 

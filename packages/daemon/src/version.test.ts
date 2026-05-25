@@ -6,11 +6,11 @@ describe('runtime version helpers', () => {
 
   beforeEach(() => {
     previous = process.env.M5CT_VERSION
-    delete process.env.M5CT_VERSION
+    Reflect.deleteProperty(process.env, 'M5CT_VERSION')
   })
 
   afterEach(() => {
-    if (previous === undefined) delete process.env.M5CT_VERSION
+    if (previous === undefined) Reflect.deleteProperty(process.env, 'M5CT_VERSION')
     else process.env.M5CT_VERSION = previous
   })
 

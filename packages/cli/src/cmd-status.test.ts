@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { type DaemonStatus } from './control-client.js'
 import { formatStatusLines, runStatus } from './cmd-status.js'
+import type { DaemonStatus } from './control-client.js'
 
 const baseStatus: DaemonStatus = {
   runtime: { name: 'm5ct', version: '1.2.3' },

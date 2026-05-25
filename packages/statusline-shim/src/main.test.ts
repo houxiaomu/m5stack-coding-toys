@@ -2,7 +2,12 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { buildDaemonPayload, buildSummary, chainedStatusLine, printVersionIfRequested } from './main.js'
+import {
+  buildDaemonPayload,
+  buildSummary,
+  chainedStatusLine,
+  printVersionIfRequested,
+} from './main.js'
 
 describe('buildSummary', () => {
   it('renders a compact one-line terminal summary from CC JSON', () => {
@@ -68,7 +73,7 @@ describe('m5ct-statusline --version entry behavior', () => {
   })
 
   afterEach(() => {
-    if (previous === undefined) delete process.env.M5CT_VERSION
+    if (previous === undefined) Reflect.deleteProperty(process.env, 'M5CT_VERSION')
     else process.env.M5CT_VERSION = previous
   })
 

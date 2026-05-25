@@ -83,7 +83,7 @@ export async function runCli(args: readonly string[], io: CliIO = defaultIO): Pr
     return 2
   }
   switch (sub) {
-    case 'version':
+    case 'version': {
       if (rest.length === 0) {
         io.log(runtimeLabel())
         return 0
@@ -95,6 +95,7 @@ export async function runCli(args: readonly string[], io: CliIO = defaultIO): Pr
       const unexpected = rest[0] === '--json' && rest.length > 1 ? rest[1] : rest[0]
       io.error(`unexpected argument: ${unexpected}`)
       return 2
+    }
     case 'install':
       return runInstall(rest)
     case 'uninstall':
