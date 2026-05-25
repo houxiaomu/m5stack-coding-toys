@@ -15,6 +15,18 @@ m5ct flash          # download + flash firmware to a connected M5Stack device
 The background daemon (`m5ctd`) starts on demand and exits when idle.
 `m5ct uninstall` restores your previous statusLine.
 
+## CLI
+
+```bash
+m5ct --version
+m5ct version
+m5ct version --json
+m5ct status
+```
+
+`m5ct`, `m5ctd`, and `m5ct-statusline` are released together and report the same
+runtime suite version from the published `m5ct` package.
+
 > V1 is tested on macOS with the M5Stack CoreS3 SE. Other platforms/boards are best-effort.
 
 ## Layout
