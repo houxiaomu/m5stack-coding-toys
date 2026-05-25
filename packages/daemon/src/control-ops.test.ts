@@ -87,9 +87,14 @@ describe('control ops over socket', () => {
     await server.close()
   })
 
-  it('status returns snapshot', async () => {
+  it('status returns snapshot with runtime info', async () => {
     const out = await rpc(sock, { op: 'status' })
-    const r = JSON.parse(out) as { state: string; board: string }
+    const r = JSON.parse(out) as {
+      runtime: { name: string; version: string }
+      state: string
+      board: string
+    }
+    expect(r.runtime).toEqual({ name: 'm5ct', version: '0.0.0' })
     expect(r.state).toBe('Connected')
     expect(r.board).toBe('X')
   })

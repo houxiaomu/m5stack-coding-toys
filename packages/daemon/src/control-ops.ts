@@ -1,10 +1,12 @@
 import type { Socket } from 'node:net'
 import type { DeviceManager, DriftEvent, ManagerState } from './device-manager.js'
 import { makeLogger } from './logger.js'
+import { runtimeInfo, type RuntimeInfo } from './version.js'
 
 const log = makeLogger('control')
 
 export interface StatusSnapshot {
+  runtime: RuntimeInfo
   state: ManagerState
   board: string | null
   fw: string | null
@@ -24,6 +26,7 @@ export function makeControlHandler(dm: DeviceManager): ControlHandler {
     async status() {
       const sess = dm.currentSession()
       return {
+        runtime: runtimeInfo(),
         state: dm.state(),
         board: sess?.info?.board ?? null,
         fw: sess?.info?.fw ?? null,

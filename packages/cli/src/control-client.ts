@@ -8,6 +8,10 @@ export function defaultSocket(): string {
 }
 
 export interface DaemonStatus {
+  runtime?: {
+    name: string
+    version: string
+  }
   state: string
   board: string | null
   fw: string | null
