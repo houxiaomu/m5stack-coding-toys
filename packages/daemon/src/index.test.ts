@@ -13,4 +13,12 @@ describe('@m5stack-coding-toys/daemon barrel', () => {
     expect(typeof d.defaultConfig).toBe('function')
     expect(typeof d.loadConfig).toBe('function')
   })
+
+  it('exports runtime version helpers', () => {
+    expect(d.RUNTIME_NAME).toBe('m5ct')
+    expect(typeof d.runtimeVersion).toBe('function')
+    expect(typeof d.runtimeInfo).toBe('function')
+    expect(typeof d.runtimeLabel).toBe('function')
+    expect(typeof d.version).toBe('function')
+  })
 })
