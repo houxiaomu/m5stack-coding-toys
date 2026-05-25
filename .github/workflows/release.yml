@@ -14,7 +14,7 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test && pnpm --filter m5ct build
+      - run: pnpm build && pnpm test
       - run: pnpm --filter m5ct publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
