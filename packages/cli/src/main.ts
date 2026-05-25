@@ -8,9 +8,20 @@ import { runStatus } from './cmd-status.js'
 import { runWatch } from './cmd-watch.js'
 import { computeInstallPatch, computeUninstall, writeSettings } from './install.js'
 import { readM5ctConfig, writeM5ctConfig } from './m5ct-config.js'
+import { runtimeInfo, runtimeLabel } from './runtime-version.js'
 
 export function listCommands(): readonly string[] {
-  return ['status', 'watch', 'flash', 'install', 'uninstall'] as const
+  return ['status', 'watch', 'flash', 'install', 'uninstall', 'version'] as const
+}
+
+export interface CliIO {
+  log(line: string): void
+  error(line: string): void
+}
+
+const defaultIO: CliIO = {
+  log: (line) => console.log(line),
+  error: (line) => console.error(line),
 }
 
 function runInstall(args: readonly string[]): number {
@@ -50,38 +61,59 @@ function runUninstall(args: readonly string[]): number {
   return 0
 }
 
-function main(): void {
-  const sub = process.argv[2]
-  const rest = process.argv.slice(3)
+export async function runCli(args: readonly string[], io: CliIO = defaultIO): Promise<number> {
+  const sub = args[0]
+  const rest = args.slice(1)
+
+  if (sub === '--version') {
+    if (rest.length > 0) {
+      io.error(`unexpected argument: ${rest[0]}`)
+      return 2
+    }
+    io.log(runtimeLabel())
+    return 0
+  }
+
   if (!sub) {
-    console.log(`usage: m5ct <${listCommands().join('|')}>`)
-    process.exit(2)
+    io.log(`usage: m5ct <${listCommands().join('|')}>`)
+    return 2
   }
   if (!listCommands().includes(sub)) {
-    console.error(`unknown command: ${sub}`)
-    process.exit(2)
+    io.error(`unknown command: ${sub}`)
+    return 2
   }
   switch (sub) {
+    case 'version':
+      if (rest.length === 0) {
+        io.log(runtimeLabel())
+        return 0
+      }
+      if (rest.length === 1 && rest[0] === '--json') {
+        io.log(JSON.stringify(runtimeInfo()))
+        return 0
+      }
+      const unexpected = rest[0] === '--json' && rest.length > 1 ? rest[1] : rest[0]
+      io.error(`unexpected argument: ${unexpected}`)
+      return 2
     case 'install':
-      process.exit(runInstall(rest))
-      break
+      return runInstall(rest)
     case 'uninstall':
-      process.exit(runUninstall(rest))
-      break
+      return runUninstall(rest)
     case 'status':
-      runStatus({ json: rest.includes('--json') }).then((c) => process.exit(c))
-      break
+      return runStatus({ json: rest.includes('--json') })
     case 'watch':
-      runWatch().then((c) => process.exit(c))
-      break
+      return runWatch()
     case 'flash':
-      runFlash(rest).then((c) => process.exit(c))
-      break
+      return runFlash(rest)
     default:
       // Unreachable: listCommands() gates sub above. Guard against drift.
-      console.error(`unknown command: ${sub}`)
-      process.exit(2)
+      io.error(`unknown command: ${sub}`)
+      return 2
   }
+}
+
+function main(): void {
+  runCli(process.argv.slice(2)).then((code) => process.exit(code))
 }
 
 // Run main() only when invoked as the entry point. Compare real paths so this
