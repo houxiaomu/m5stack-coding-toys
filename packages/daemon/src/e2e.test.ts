@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
@@ -107,5 +107,26 @@ describe('m5ctd e2e (daemon ↔ fake-firmware via socket)', () => {
     const snap = JSON.parse(reply)
     expect(snap.board).toBe('cores3-se')
     expect(snap.caps).toContain('display')
+  }, 15000)
+
+  it('screenshot op writes the device PNG to disk', async () => {
+    h = await startDaemon()
+    // Wait for hello handshake with fake-firmware (same delay as existing tests).
+    await new Promise((r) => setTimeout(r, 1500))
+
+    // Create a temp dir for the output file and clean it up after the test.
+    const outDir = mkdtempSync(resolve(tmpdir(), 'm5ct-e2e-screenshot-'))
+    const outPath = resolve(outDir, 'screen.png')
+    try {
+      const reply = await send(h.socketPath, { op: 'screenshot', out: outPath })
+      expect(JSON.parse(reply)).toEqual({ ok: true, path: outPath })
+
+      // The fake-firmware replies with png_b64:'iVBORw==' which decodes to
+      // the 4-byte PNG magic: 0x89 0x50 0x4e 0x47.
+      const bytes = readFileSync(outPath)
+      expect(bytes).toEqual(Buffer.from('iVBORw==', 'base64'))
+    } finally {
+      rmSync(outDir, { recursive: true, force: true })
+    }
   }, 15000)
 })
