@@ -10,18 +10,7 @@ import { computeInstallPatch, computeUninstall, writeSettings } from './install.
 import { readM5ctConfig, writeM5ctConfig } from './m5ct-config.js'
 
 export function listCommands(): readonly string[] {
-  return [
-    'pair',
-    'devices',
-    'use',
-    'forget',
-    'status',
-    'watch',
-    'flash',
-    'log',
-    'install',
-    'uninstall',
-  ] as const
+  return ['status', 'watch', 'flash', 'install', 'uninstall'] as const
 }
 
 function runInstall(args: readonly string[]): number {
@@ -89,8 +78,9 @@ function main(): void {
       runFlash(rest).then((c) => process.exit(c))
       break
     default:
-      console.log(`m5ct ${sub}: not yet implemented`)
-      process.exit(0)
+      // Unreachable: listCommands() gates sub above. Guard against drift.
+      console.error(`unknown command: ${sub}`)
+      process.exit(2)
   }
 }
 
