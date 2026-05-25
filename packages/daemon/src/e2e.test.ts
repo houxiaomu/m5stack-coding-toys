@@ -1,0 +1,111 @@
+import { type ChildProcess, spawn } from 'node:child_process'
+import { mkdtempSync } from 'node:fs'
+import { createConnection } from 'node:net'
+import { tmpdir } from 'node:os'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { afterEach, describe, expect, it } from 'vitest'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const daemonBin = resolve(here, '../dist/main.js')
+const fakeFirmware = resolve(here, '../../../tools/fake-firmware/dist/main.js')
+
+interface Harness {
+  proc: ChildProcess
+  socketPath: string
+  /** Captured stdout+stderr of the daemon (and inherited fake-firmware stderr). */
+  output: () => string
+}
+
+function startDaemon(): Promise<Harness> {
+  const dir = mkdtempSync(resolve(tmpdir(), 'm5ct-e2e-'))
+  const socketPath = resolve(dir, '.m5stack-coding-toys/daemon.sock')
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    HOME: dir,
+  }
+  const fs = require('node:fs') as typeof import('node:fs')
+  fs.mkdirSync(resolve(dir, '.m5stack-coding-toys'), { recursive: true })
+  fs.writeFileSync(
+    resolve(dir, '.m5stack-coding-toys/config.toml'),
+    `
+[transport]
+kind = "fake-stdio"
+[transport.fake-stdio]
+cmd = ["${process.execPath}", "${fakeFirmware}"]
+`,
+  )
+  const proc = spawn(process.execPath, [daemonBin], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+  let buf = ''
+  return new Promise((resolveP, rejectP) => {
+    let resolved = false
+    const onLine = (chunk: Buffer) => {
+      buf += chunk.toString('utf8')
+      if (!resolved && buf.includes('m5ctd up')) {
+        resolved = true
+        resolveP({ proc, socketPath, output: () => buf })
+      }
+    }
+    proc.stdout?.on('data', onLine)
+    proc.stderr?.on('data', onLine)
+    proc.on('error', rejectP)
+    setTimeout(() => {
+      if (!resolved) rejectP(new Error(`daemon never reported listening; output: ${buf}`))
+    }, 5000)
+  })
+}
+
+/** Fire a one-shot frame at the daemon control socket and resolve with the reply. */
+function send(socketPath: string, req: object): Promise<string> {
+  return new Promise((res, rej) => {
+    const sock = createConnection(socketPath)
+    let buf = ''
+    sock.on('data', (b: Buffer) => {
+      buf += b.toString('utf8')
+    })
+    sock.on('end', () => res(buf))
+    sock.on('error', rej)
+    sock.write(`${JSON.stringify(req)}\n`)
+  })
+}
+
+let h: Harness | null = null
+
+afterEach(async () => {
+  if (h) {
+    h.proc.kill()
+    h = null
+  }
+})
+
+describe('m5ctd e2e (daemon ↔ fake-firmware via socket)', () => {
+  it('forwards a statusLine frame and pushes a status frame to the device', async () => {
+    h = await startDaemon()
+    // Give the daemon a moment to complete hello with fake-firmware.
+    await new Promise((r) => setTimeout(r, 1500))
+    const reply = await send(h.socketPath, {
+      statusLine: {
+        model: { id: 'claude-sonnet-4-6', display_name: 'Sonnet 4.6' },
+        context_window: { used_percentage: 47 },
+        cost: { total_cost_usd: 0.42 },
+        workspace: { current_dir: '/tmp' },
+      },
+    })
+    expect(JSON.parse(reply)).toEqual({ ok: true })
+    // Allow the push to round-trip to the fake-firmware (logged to stderr).
+    await new Promise((r) => setTimeout(r, 800))
+    const log = h.output()
+    expect(log).toContain('[fake-firmware] status')
+    expect(log).toContain('"state":"active"')
+    expect(log).toContain('Sonnet 4.6')
+  }, 15000)
+
+  it('answers a status control op', async () => {
+    h = await startDaemon()
+    await new Promise((r) => setTimeout(r, 1500))
+    const reply = await send(h.socketPath, { op: 'status' })
+    const snap = JSON.parse(reply)
+    expect(snap.board).toBe('cores3-se')
+    expect(snap.caps).toContain('display')
+  }, 15000)
+})

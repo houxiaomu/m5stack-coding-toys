@@ -1,0 +1,73 @@
+import { z } from 'zod'
+import { CAPS, STATES, URGENCY } from './kinds.js'
+
+const capsSchema = z.array(z.enum(CAPS))
+const pct = z.number().min(0).max(100)
+const nonNegInt = z.number().int().nonnegative()
+const epochSec = z.number().int().nonnegative()
+
+export const helloPayload = z.object({
+  caps: capsSchema,
+})
+
+export const notifyPayload = z.object({
+  title: z.string().min(1).max(80),
+  body: z.string().max(240).optional(),
+  urgency: z.enum(URGENCY),
+})
+
+export const pingPayload = z.object({}).strict()
+
+// The single consolidated status snapshot. Only `state` is required;
+// every other group is optional and may be partially present, so devices
+// degrade gracefully when the host can't supply a field (e.g. non-Pro/Max
+// users have no rate_limits; current_usage is null before first API call).
+export const statusPayload = z.object({
+  state: z.enum(STATES),
+  model: z.object({ id: z.string(), short: z.string() }).partial().optional(),
+  context: z
+    .object({
+      usedPct: pct,
+      tokens: nonNegInt,
+      limit: z.number().int().positive(),
+      exceeds200k: z.boolean(),
+    })
+    .partial()
+    .optional(),
+  cost: z
+    .object({
+      sessionUsd: z.number().nonnegative(),
+      burnPerHr: z.number().nonnegative(),
+      durationMin: nonNegInt,
+      linesAdded: nonNegInt,
+      linesRemoved: nonNegInt,
+    })
+    .partial()
+    .optional(),
+  block: z.object({ usedPct: pct, resetAt: epochSec, resetInMin: nonNegInt }).partial().optional(),
+  weekly: z.object({ usedPct: pct, resetAt: epochSec }).partial().optional(),
+  today: z.object({ costUsd: z.number().nonnegative(), sessions: nonNegInt }).partial().optional(),
+  burnHistory: z.array(z.number().nonnegative()).max(60).optional(),
+  workspace: z.object({ dir: z.string(), worktree: z.string() }).partial().optional(),
+  git: z
+    .object({
+      branch: z.string(),
+      ahead: nonNegInt,
+      behind: nonNegInt,
+      staged: nonNegInt,
+      unstaged: nonNegInt,
+      untracked: nonNegInt,
+      lastCommit: z.object({ hash: z.string(), msg: z.string(), minsAgo: nonNegInt }).partial(),
+    })
+    .partial()
+    .optional(),
+  pr: z
+    .object({ number: z.number().int().positive(), reviewState: z.string() })
+    .partial()
+    .optional(),
+})
+
+export type HelloPayload = z.infer<typeof helloPayload>
+export type NotifyPayload = z.infer<typeof notifyPayload>
+export type PingPayload = z.infer<typeof pingPayload>
+export type StatusPayload = z.infer<typeof statusPayload>

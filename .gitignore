@@ -1,0 +1,33 @@
+# Node
+node_modules/
+dist/
+!firmware/dist/
+*.log
+.DS_Store
+
+# TypeScript
+*.tsbuildinfo
+
+# Vitest
+coverage/
+
+# PlatformIO
+firmware/.pio/
+firmware/.pioenvs/
+firmware/.piolibdeps/
+firmware/.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+*.swp
+coverage/
+
+# Superpowers skill session state
+.superpowers/
+
+# Docs (specs/plans, kept local only)
+docs/

@@ -1,0 +1,21 @@
+{
+  "name": "@m5stack-coding-toys/fake-firmware",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "m5ct-fake-firmware": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@m5stack-coding-toys/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.0.0"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "@m5stack-coding-toys/root",
+  "version": "0.0.0",
+  "private": true,
+  "description": "M5Stack hardware controller for Claude Code CLI",
+  "type": "module",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "pnpm -r typecheck",
+    "fw:build": "pio run --project-dir firmware",
+    "fw:test": "pio test --project-dir firmware -e native",
+    "gen:msgs": "pnpm --filter @m5stack-coding-toys/gen-msgs build && pnpm --filter @m5stack-coding-toys/gen-msgs run run",
+    "gen:msgs:check": "pnpm --filter @m5stack-coding-toys/gen-msgs build && node tools/gen-msgs/dist/main.js --check"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@vitest/coverage-v8": "^2.1.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"]
+  },
+  "dependencies": {
+    "serialport": "^13.0.0"
+  }
+}

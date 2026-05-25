@@ -1,0 +1,58 @@
+#pragma once
+#include <ArduinoJson.h>
+#include <cstdint>
+
+namespace m5render {
+
+struct StatusModel {
+  // Coarse session liveness from the daemon: true for `active`, false for `idle`.
+  bool sessionActive = true;
+
+  // model
+  char modelShort[24] = "";
+  // context
+  bool hasContext = false;
+  int  ctxUsedPct = 0; uint32_t ctxTokens = 0; uint32_t ctxLimit = 0; bool exceeds200k = false;
+  // cost
+  bool hasCost = false;
+  float costSessionUsd = 0, costBurnPerHr = 0; int costDurationMin = 0;
+  int linesAdded = 0, linesRemoved = 0;
+  // block (5h)
+  bool hasBlock = false; int blockPct = 0; int blockResetInMin = 0;
+  // weekly (7d aggregate)
+  bool hasWeekly = false; int weeklyPct = 0;
+  // today
+  bool hasToday = false; float todayCost = 0; int todaySessions = 0;
+  // burnHistory
+  int burnN = 0; float burn[16] = {0};
+  // workspace
+  char wsDir[64] = ""; char wsWorktree[40] = "";
+  // git
+  bool hasGit = false;
+  char branch[40] = ""; int ahead = 0, behind = 0, staged = 0, unstaged = 0, untracked = 0;
+  char lastCommitHash[10] = ""; char lastCommitMsg[48] = ""; int lastCommitMins = 0;
+  // pr
+  bool hasPr = false; int prNumber = 0; char prReview[16] = "";
+};
+
+struct DeviceInfo {
+  char board[24] = "CoreS3";
+  char fw[16] = "";
+  char clock[8] = "--:--";   // RTC HH:MM
+  char date[20] = "";
+  int  batteryPct = 0; bool charging = false;
+};
+
+// Parse one `status` envelope payload (the `p` object) into the model.
+// Missing groups leave has*=false.
+
+// Core parser: consumes an already-parsed payload object directly (no
+// re-serialize / re-parse). Always returns true (a JsonObjectConst is, by
+// construction, valid JSON).
+bool parseStatusFrame(JsonObjectConst obj, StatusModel& out);
+
+// Convenience overload: parses a JSON string then delegates to the core.
+// Returns false on invalid JSON. Used by the native string-based tests.
+bool parseStatusFrame(const char* json, StatusModel& out);
+
+}  // namespace m5render
