@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { connect } from 'node:net'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { ensureDaemon } from './bootstrap.js'
 import { currentClaudePid } from './ccpid.js'
 import { runChained } from './chain.js'
@@ -88,4 +89,17 @@ async function main(): Promise<void> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) void main()
+// Run main() only when invoked as the entry point. Compare real paths so this
+// also fires under symlinked bins (global install / npm link), where argv[1] is
+// the symlink but import.meta.url resolves to the real file.
+function isEntryPoint(): boolean {
+  const argv1 = process.argv[1]
+  if (!argv1) return false
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return false
+  }
+}
+
+if (isEntryPoint()) void main()

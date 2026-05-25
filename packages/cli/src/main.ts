@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
+import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { runFlash } from './cmd-flash.js'
 import { runStatus } from './cmd-status.js'
 import { runWatch } from './cmd-watch.js'
@@ -92,6 +94,19 @@ function main(): void {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run main() only when invoked as the entry point. Compare real paths so this
+// also fires under symlinked bins (global install / npm link), where argv[1] is
+// the symlink but import.meta.url resolves to the real file.
+function isEntryPoint(): boolean {
+  const argv1 = process.argv[1]
+  if (!argv1) return false
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return false
+  }
+}
+
+if (isEntryPoint()) {
   main()
 }
