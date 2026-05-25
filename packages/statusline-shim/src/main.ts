@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { ensureDaemon } from './bootstrap.js'
 import { currentClaudePid } from './ccpid.js'
 import { runChained } from './chain.js'
+import { runtimeLabel } from './runtime-version.js'
 
 interface CC {
   session_id?: string
@@ -42,6 +43,15 @@ export function chainedStatusLine(home: string = process.env.HOME ?? ''): string
   } catch {
     return undefined
   }
+}
+
+export function printVersionIfRequested(
+  args: readonly string[],
+  writeLine: (line: string) => void = (line) => console.log(line),
+): boolean {
+  if (!args.includes('--version')) return false
+  writeLine(runtimeLabel('m5ct-statusline'))
+  return true
 }
 
 function readStdin(): Promise<string> {
@@ -102,4 +112,9 @@ function isEntryPoint(): boolean {
   }
 }
 
-if (isEntryPoint()) void main()
+if (isEntryPoint()) {
+  if (printVersionIfRequested(process.argv.slice(2))) {
+    process.exit(0)
+  }
+  void main()
+}

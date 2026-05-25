@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { buildDaemonPayload, buildSummary, chainedStatusLine } from './main.js'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { buildDaemonPayload, buildSummary, chainedStatusLine, printVersionIfRequested } from './main.js'
 
 describe('buildSummary', () => {
   it('renders a compact one-line terminal summary from CC JSON', () => {
@@ -56,5 +56,31 @@ describe('chainedStatusLine', () => {
     mkdirSync(dir, { recursive: true })
     writeFileSync(resolve(dir, 'config.json'), JSON.stringify({ chainedStatusLine: 'legacy' }))
     expect(chainedStatusLine(home)).toBeUndefined()
+  })
+})
+
+describe('m5ct-statusline --version entry behavior', () => {
+  let previous: string | undefined
+
+  beforeEach(() => {
+    previous = process.env.M5CT_VERSION
+    process.env.M5CT_VERSION = '3.4.5'
+  })
+
+  afterEach(() => {
+    if (previous === undefined) delete process.env.M5CT_VERSION
+    else process.env.M5CT_VERSION = previous
+  })
+
+  it('prints statusline binary label and reports that startup should stop', () => {
+    const out: string[] = []
+    expect(printVersionIfRequested(['--version'], (line) => out.push(line))).toBe(true)
+    expect(out).toEqual(['m5ct-statusline 3.4.5'])
+  })
+
+  it('ignores normal statusline invocations', () => {
+    const out: string[] = []
+    expect(printVersionIfRequested([], (line) => out.push(line))).toBe(false)
+    expect(out).toEqual([])
   })
 })
