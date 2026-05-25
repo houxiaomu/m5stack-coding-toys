@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { FileAggregatorStore } from './aggregator-store.js'
 import type { StatusLineInput } from './cc-statusline.js'
 import { loadConfig } from './config.js'
@@ -19,9 +20,18 @@ import { aggregatorStatePath, logPath, pidPath, socketPath, stateDir } from './s
 import { FakeStdioTransport } from './transport/fake-stdio.js'
 import type { Transport } from './transport/interface.js'
 import { SerialTransport } from './transport/serial.js'
-import { version } from './version.js'
+import { runtimeLabel, version } from './version.js'
 
 const log = makeLogger('main')
+
+export function printVersionIfRequested(
+  args: readonly string[],
+  writeLine: (line: string) => void = (line) => console.log(line),
+): boolean {
+  if (!args.includes('--version')) return false
+  writeLine(runtimeLabel('m5ctd'))
+  return true
+}
 
 async function main(): Promise<void> {
   const cfg = loadConfig()
@@ -141,7 +151,22 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown)
 }
 
-main().catch((err) => {
-  log.error('fatal', { error: (err as Error).message, stack: (err as Error).stack })
-  process.exit(1)
-})
+function isEntryPoint(): boolean {
+  const argv1 = process.argv[1]
+  if (!argv1) return false
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return false
+  }
+}
+
+if (isEntryPoint()) {
+  if (printVersionIfRequested(process.argv.slice(2))) {
+    process.exit(0)
+  }
+  main().catch((err) => {
+    log.error('fatal', { error: (err as Error).message, stack: (err as Error).stack })
+    process.exit(1)
+  })
+}
