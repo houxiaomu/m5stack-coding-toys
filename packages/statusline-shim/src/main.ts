@@ -33,8 +33,8 @@ export function buildSummary(cc: CC): string {
   return parts.length > 0 ? `m5ct ${parts.join(' · ')}` : 'm5ct ·'
 }
 
-function chainedStatusLine(): string | undefined {
-  const path = resolve(process.env.HOME ?? '', '.m5stack-coding-toys', 'config.json')
+export function chainedStatusLine(home: string = process.env.HOME ?? ''): string | undefined {
+  const path = resolve(home, '.m5stack-coding-toys', 'install-state.json')
   if (!existsSync(path)) return undefined
   try {
     const c = JSON.parse(readFileSync(path, 'utf8')) as { chainedStatusLine?: string }

@@ -1,5 +1,8 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { buildDaemonPayload, buildSummary } from './main.js'
+import { buildDaemonPayload, buildSummary, chainedStatusLine } from './main.js'
 
 describe('buildSummary', () => {
   it('renders a compact one-line terminal summary from CC JSON', () => {
@@ -33,4 +36,25 @@ it('omits ccPid when null', () => {
 it('omits sessionId when absent', () => {
   const p = buildDaemonPayload({}, 10)
   expect(p).toEqual({ statusLine: {}, ccPid: 10 })
+})
+
+describe('chainedStatusLine', () => {
+  it('reads install-state.json', () => {
+    const home = mkdtempSync(resolve(tmpdir(), 'm5ct-shim-state-'))
+    const dir = resolve(home, '.m5stack-coding-toys')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      resolve(dir, 'install-state.json'),
+      JSON.stringify({ chainedStatusLine: 'npx -y ccstatusline@latest' }),
+    )
+    expect(chainedStatusLine(home)).toBe('npx -y ccstatusline@latest')
+  })
+
+  it('does not read legacy config.json', () => {
+    const home = mkdtempSync(resolve(tmpdir(), 'm5ct-shim-state-'))
+    const dir = resolve(home, '.m5stack-coding-toys')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(resolve(dir, 'config.json'), JSON.stringify({ chainedStatusLine: 'legacy' }))
+    expect(chainedStatusLine(home)).toBeUndefined()
+  })
 })

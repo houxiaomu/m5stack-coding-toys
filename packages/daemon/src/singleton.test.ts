@@ -1,8 +1,8 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { type LockInfo, acquireLock, readLock, shouldExitIdle } from './singleton.js'
+import { type LockInfo, acquireLock, readLock, releaseLock, shouldExitIdle } from './singleton.js'
 
 function tmpLock(): string {
   return resolve(mkdtempSync(resolve(tmpdir(), 'm5ct-lock-')), 'daemon.lock')
@@ -48,6 +48,15 @@ describe('acquireLock', () => {
     const path = tmpLock()
     writeFileSync(path, 'not json')
     expect(readLock(path)).toBeNull()
+  })
+
+  it('releases the lock only when the pid matches', () => {
+    const path = tmpLock()
+    writeFileSync(path, JSON.stringify({ pid: 600, version: '1.0.0', startedAt: 1 }))
+    expect(releaseLock(path, 601)).toBe(false)
+    expect(existsSync(path)).toBe(true)
+    expect(releaseLock(path, 600)).toBe(true)
+    expect(existsSync(path)).toBe(false)
   })
 })
 

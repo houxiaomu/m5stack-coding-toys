@@ -34,6 +34,7 @@ kind = "fake-stdio"
 cmd = ["node", "fake.js"]
 
 [policy]
+approval_timeout_ms = 30000
 notify_timeout_ms = 2500
 `,
     )
@@ -44,5 +45,6 @@ notify_timeout_ms = 2500
       expect(c.transport.cmd).toEqual(['node', 'fake.js'])
     }
     expect(c.policy.notify_timeout_ms).toBe(2500)
+    expect(c.policy).not.toHaveProperty('approval_timeout_ms')
   })
 })

@@ -8,12 +8,12 @@ export interface M5ctConfig {
   [key: string]: unknown
 }
 
-export function configFilePath(home: string = homedir()): string {
-  return resolve(home, '.m5stack-coding-toys', 'config.json')
+export function installStatePath(home: string = homedir()): string {
+  return resolve(home, '.m5stack-coding-toys', 'install-state.json')
 }
 
 export function readM5ctConfig(home: string = homedir()): M5ctConfig {
-  const path = configFilePath(home)
+  const path = installStatePath(home)
   if (!existsSync(path)) return {}
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as M5ctConfig
@@ -23,7 +23,7 @@ export function readM5ctConfig(home: string = homedir()): M5ctConfig {
 }
 
 export function writeM5ctConfig(home: string, patch: M5ctConfig): void {
-  const path = configFilePath(home)
+  const path = installStatePath(home)
   mkdirSync(dirname(path), { recursive: true })
   const merged = { ...readM5ctConfig(home), ...patch }
   writeFileSync(path, `${JSON.stringify(merged, null, 2)}\n`)

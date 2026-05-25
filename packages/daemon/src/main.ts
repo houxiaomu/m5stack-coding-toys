@@ -14,7 +14,7 @@ import { HookServer } from './hook-server.js'
 import { type LogLevel, closeLogFile, makeLogger, setLogFile, setLogLevel } from './logger.js'
 import { Router } from './router.js'
 import { SessionAggregator } from './session-aggregator.js'
-import { acquireLock, defaultAlive, shouldExitIdle } from './singleton.js'
+import { acquireLock, defaultAlive, releaseLock, shouldExitIdle } from './singleton.js'
 import { aggregatorStatePath, logPath, pidPath, socketPath, stateDir } from './state-dir.js'
 import { FakeStdioTransport } from './transport/fake-stdio.js'
 import type { Transport } from './transport/interface.js'
@@ -118,6 +118,7 @@ async function main(): Promise<void> {
     log.info('shutdown requested')
     dm.stop()
     await server.close()
+    releaseLock(pidPath())
     await closeLogFile()
     process.exit(0)
   }

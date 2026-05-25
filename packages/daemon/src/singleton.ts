@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 
 export interface LockInfo {
   pid: number
@@ -55,6 +55,17 @@ export function acquireLock(
   }
   write(path, self)
   return { outcome: 'acquired' }
+}
+
+export function releaseLock(path: string, pid: number = process.pid): boolean {
+  const holder = readLock(path)
+  if (!holder || holder.pid !== pid) return false
+  try {
+    unlinkSync(path)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function write(path: string, self: { pid: number; version: string }): void {
