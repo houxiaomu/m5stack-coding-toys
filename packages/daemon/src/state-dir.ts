@@ -30,3 +30,13 @@ export function devicesPath(home: string = homedir()): string {
 export function aggregatorStatePath(home: string = homedir()): string {
   return resolve(stateDir(home), 'aggregator-state.json')
 }
+
+export function screenshotsDir(home: string = homedir()): string {
+  return resolve(stateDir(home), 'screenshots')
+}
+
+// Filesystem-safe UTC timestamp filename, e.g. 2026-05-26T14-03-05.png
+export function screenshotFilename(now: Date = new Date()): string {
+  const ts = now.toISOString().slice(0, 19).replace(/:/g, '-')
+  return `${ts}.png`
+}
