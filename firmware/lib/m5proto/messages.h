@@ -11,12 +11,14 @@ namespace m5proto {
     constexpr const char* status = "status";
     constexpr const char* notify = "notify";
     constexpr const char* ping = "ping";
+    constexpr const char* screenshot = "screenshot";
 
     // device -> host
     constexpr const char* hello_ack = "hello.ack";
     constexpr const char* notify_ack = "notify.ack";
     constexpr const char* device_event = "device.event";
     constexpr const char* pong = "pong";
+    constexpr const char* screenshot_ack = "screenshot.ack";
   }
 
   namespace state {

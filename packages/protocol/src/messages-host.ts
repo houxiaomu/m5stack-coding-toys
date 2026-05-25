@@ -67,7 +67,12 @@ export const statusPayload = z.object({
     .optional(),
 })
 
+export const screenshotPayload = z.object({
+  fmt: z.literal('png').default('png'),
+})
+
 export type HelloPayload = z.infer<typeof helloPayload>
 export type NotifyPayload = z.infer<typeof notifyPayload>
 export type PingPayload = z.infer<typeof pingPayload>
 export type StatusPayload = z.infer<typeof statusPayload>
+export type ScreenshotPayload = z.infer<typeof screenshotPayload>
