@@ -28,13 +28,23 @@ describe('@m5stack-coding-toys/cli', () => {
   })
 
   it('declares only the implemented subcommands', () => {
-    expect(listCommands()).toEqual(['status', 'watch', 'flash', 'install', 'uninstall', 'version'])
+    expect(listCommands()).toEqual([
+      'status',
+      'watch',
+      'flash',
+      'install',
+      'uninstall',
+      'version',
+      'screenshot',
+    ])
   })
 
   it('prints usage when no command is provided', async () => {
     const c = capture()
     await expect(runCli([], c.io)).resolves.toBe(2)
-    expect(c.stdout).toEqual(['usage: m5ct <status|watch|flash|install|uninstall|version>'])
+    expect(c.stdout).toEqual([
+      'usage: m5ct <status|watch|flash|install|uninstall|version|screenshot>',
+    ])
     expect(c.stderr).toEqual([])
   })
 

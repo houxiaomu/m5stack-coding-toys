@@ -4,6 +4,7 @@ import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { runFlash } from './cmd-flash.js'
+import { runScreenshot } from './cmd-screenshot.js'
 import { runStatus } from './cmd-status.js'
 import { runWatch } from './cmd-watch.js'
 import { computeInstallPatch, computeUninstall, writeSettings } from './install.js'
@@ -11,7 +12,7 @@ import { readM5ctConfig, writeM5ctConfig } from './m5ct-config.js'
 import { runtimeInfo, runtimeLabel } from './runtime-version.js'
 
 export function listCommands(): readonly string[] {
-  return ['status', 'watch', 'flash', 'install', 'uninstall', 'version'] as const
+  return ['status', 'watch', 'flash', 'install', 'uninstall', 'version', 'screenshot'] as const
 }
 
 export interface CliIO {
@@ -106,6 +107,8 @@ export async function runCli(args: readonly string[], io: CliIO = defaultIO): Pr
       return runWatch()
     case 'flash':
       return runFlash(rest)
+    case 'screenshot':
+      return runScreenshot(rest, io)
     default:
       // Unreachable: listCommands() gates sub above. Guard against drift.
       io.error(`unknown command: ${sub}`)
