@@ -43,6 +43,14 @@ public:
     return n * 6;
   }
 
+  // Canned 4-byte capture so test_app can assert the screenshot path without
+  // a real framebuffer. base64("\x89PNG") == "iVBORw==".
+  bool capturePng(std::vector<uint8_t>& out) override {
+    calls.push_back("capturePng");
+    out = {0x89, 'P', 'N', 'G'};
+    return true;
+  }
+
   // ── query helpers ─────────────────────────────────────────────────────────
 
   // True if "<prim>:<arg>" was recorded exactly.

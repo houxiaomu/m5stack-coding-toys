@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <vector>
 
 namespace m5render {
 
@@ -55,6 +56,13 @@ public:
 
   virtual void text(const char* s, int x, int y, Font f, Align a, uint16_t fg) = 0;
   virtual int  measureText(const char* s, Font f) = 0;
+
+  // Capture the current frame as PNG bytes into `out`. Returns false if the
+  // device/canvas cannot produce a screenshot. Default: unsupported.
+  virtual bool capturePng(std::vector<uint8_t>& out) {
+    (void)out;
+    return false;
+  }
 };
 
 }  // namespace m5render
