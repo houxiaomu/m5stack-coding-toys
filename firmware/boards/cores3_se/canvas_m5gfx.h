@@ -1,6 +1,7 @@
 #pragma once
 
 #include <M5Unified.h>
+#include <vector>
 
 #include "canvas.h"
 
@@ -32,6 +33,7 @@ public:
 
     void text(const char* s, int x, int y, Font f, Align a, uint16_t fg) override;
     int  measureText(const char* s, Font f) override;
+    bool capturePng(std::vector<uint8_t>& out) override;
 
 private:
     M5Canvas sprite_;

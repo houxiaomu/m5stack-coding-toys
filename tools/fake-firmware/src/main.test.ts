@@ -79,4 +79,20 @@ describe('fake-firmware e2e', () => {
       fake.kill()
     }
   }, 5000)
+
+  it('replies screenshot.ack to a screenshot request', async () => {
+    const fake = runFake([])
+    try {
+      fake.send(encode({ k: 'screenshot', id: 'm1', p: { fmt: 'png' } }))
+      const reply = await fake.recv
+      const env = decode(reply)
+      expect(env.k).toBe('screenshot.ack')
+      expect(env.id).toBe('m1')
+      const p = env.p as { ok: boolean; png_b64?: string }
+      expect(p.ok).toBe(true)
+      expect(typeof p.png_b64).toBe('string')
+    } finally {
+      fake.kill()
+    }
+  }, 5000)
 })

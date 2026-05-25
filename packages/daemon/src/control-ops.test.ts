@@ -1,10 +1,11 @@
 import { EventEmitter } from 'node:events'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { makeControlHandler } from './control-ops.js'
+import type { DeviceManager } from './device-manager.js'
 import { HookServer } from './hook-server.js'
 import type { Router } from './router.js'
 
@@ -126,5 +127,49 @@ describe('control ops over socket', () => {
       expect(ev.state).toBe('Cooldown')
       return true
     })
+  })
+})
+
+function dmWith(session: unknown): DeviceManager {
+  return { currentSession: () => session } as unknown as DeviceManager
+}
+
+describe('screenshot control op', () => {
+  it('writes the decoded png to the given path', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'm5shot-'))
+    const out = join(dir, 'shot.png')
+    const session = {
+      request: async () => ({ k: 'screenshot.ack', p: { ok: true, png_b64: 'aGk=' } }),
+    }
+    const h = makeControlHandler(dmWith(session))
+    const r = await h.screenshot(out)
+    expect(r).toEqual({ ok: true, path: out })
+    expect(readFileSync(out).toString()).toBe('hi') // base64 "aGk=" === "hi"
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('errors when no device is connected', async () => {
+    const h = makeControlHandler(dmWith(null))
+    expect(await h.screenshot('/tmp/x.png')).toEqual({ error: 'no_device' })
+  })
+
+  it('maps a timeout to device_timeout', async () => {
+    const session = {
+      request: async () => {
+        const e = new Error('timed out') as Error & { code?: string }
+        e.code = 'ETIMEDOUT'
+        throw e
+      },
+    }
+    const h = makeControlHandler(dmWith(session))
+    expect(await h.screenshot('/tmp/x.png')).toEqual({ error: 'device_timeout' })
+  })
+
+  it('surfaces a device capture failure', async () => {
+    const session = {
+      request: async () => ({ k: 'screenshot.ack', p: { ok: false, err: 'capture_unsupported' } }),
+    }
+    const h = makeControlHandler(dmWith(session))
+    expect(await h.screenshot('/tmp/x.png')).toEqual({ error: 'capture_unsupported' })
   })
 })

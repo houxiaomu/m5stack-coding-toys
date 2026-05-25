@@ -141,6 +141,12 @@ export class HookServer {
           sock.end(`${JSON.stringify(r)}\n`)
           return
         }
+        case 'screenshot': {
+          const out = typeof msg.out === 'string' ? msg.out : undefined
+          const r = await this.control.screenshot(out)
+          sock.end(`${JSON.stringify(r)}\n`)
+          return
+        }
         default:
           sock.end(`${JSON.stringify({ error: `unknown_op: ${op}` })}\n`)
       }

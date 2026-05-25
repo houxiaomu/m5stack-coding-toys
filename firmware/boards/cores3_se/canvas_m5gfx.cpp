@@ -1,5 +1,8 @@
 #include "canvas_m5gfx.h"
 
+#include <cstdlib>
+#include <vector>
+
 namespace m5render {
 
 CoreS3Canvas::CoreS3Canvas() : sprite_(&M5.Display) {
@@ -120,6 +123,20 @@ int CoreS3Canvas::measureText(const char* s, Font f) {
     if (ready_) { sprite_.setFont(fontFor(f)); return sprite_.textWidth(s); }
     M5.Display.setFont(fontFor(f));
     return M5.Display.textWidth(s);
+}
+
+bool CoreS3Canvas::capturePng(std::vector<uint8_t>& out) {
+    if (!ready_) return false;
+    std::size_t len = 0;
+    void* png = sprite_.createPng(&len);  // M5GFX encodes the off-screen sprite
+    if (!png || len == 0) {
+        if (png) free(png);
+        return false;
+    }
+    const uint8_t* p = static_cast<const uint8_t*>(png);
+    out.assign(p, p + len);
+    free(png);  // createPng returns a malloc'd buffer; caller frees
+    return true;
 }
 
 }  // namespace m5render

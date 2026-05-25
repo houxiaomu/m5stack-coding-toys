@@ -2,12 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { ALL_KINDS, CAPS, DEVICE_KINDS, HOST_KINDS, STATES, URGENCY } from './kinds.js'
 
 describe('kinds', () => {
-  it('host kinds are status-display only', () => {
-    expect(HOST_KINDS).toEqual(['hello', 'status', 'notify', 'ping'])
+  it('host kinds are status-display + screenshot', () => {
+    expect(HOST_KINDS).toEqual(['hello', 'status', 'notify', 'ping', 'screenshot'])
   })
 
-  it('device kinds drop approval/prompt', () => {
-    expect(DEVICE_KINDS).toEqual(['hello.ack', 'notify.ack', 'device.event', 'pong'])
+  it('device kinds drop approval/prompt, add screenshot.ack', () => {
+    expect(DEVICE_KINDS).toEqual([
+      'hello.ack',
+      'notify.ack',
+      'device.event',
+      'pong',
+      'screenshot.ack',
+    ])
   })
 
   it('ALL_KINDS is host + device with no duplicates', () => {

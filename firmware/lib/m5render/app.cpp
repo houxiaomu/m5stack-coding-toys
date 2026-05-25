@@ -2,7 +2,10 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 
+#include "base64.h"
 #include "codec.h"
 #include "dbg.h"
 #include "messages.h"
@@ -96,6 +99,21 @@ void App::handleLine(const char* line, std::size_t len) {
         char out[128];
         std::size_t n = m5proto::encode_pong(env.id, 0, out, sizeof(out));
         if (n > 0) send(out, n);
+        return;
+    }
+
+    if (std::strcmp(env.kind, m5proto::kind::screenshot) == 0) {
+        std::vector<uint8_t> png;
+        if (canvas_.capturePng(png) && !png.empty()) {
+            std::string b64 = m5proto::base64Encode(png.data(), png.size());
+            std::string line = m5proto::encode_screenshot_ack(
+                env.id, 0, true, canvas_.width(), canvas_.height(), b64, nullptr);
+            send(line.c_str(), line.size());
+        } else {
+            std::string line = m5proto::encode_screenshot_ack(
+                env.id, 0, false, 0, 0, std::string(), "capture_unsupported");
+            send(line.c_str(), line.size());
+        }
         return;
     }
 

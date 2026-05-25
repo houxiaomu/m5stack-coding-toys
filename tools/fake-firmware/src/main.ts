@@ -61,6 +61,16 @@ function handle(board: Board, raw: string): void {
     send(encode({ k: 'notify.ack', ...(env.id ? { id: env.id } : {}), p: {} }))
     return
   }
+  if (env.k === 'screenshot') {
+    send(
+      encode({
+        k: 'screenshot.ack',
+        ...(env.id ? { id: env.id } : {}),
+        p: { ok: true, w: 320, h: 240, fmt: 'png', png_b64: 'iVBORw==' },
+      }),
+    )
+    return
+  }
   if (env.k === 'status') {
     // Fire-and-forget; log to stderr so tests can scrape the pushed frame.
     process.stderr.write(`[fake-firmware] status ${JSON.stringify(env.p)}\n`)
