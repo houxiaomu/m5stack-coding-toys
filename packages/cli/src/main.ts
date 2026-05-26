@@ -13,7 +13,16 @@ import { readM5ctConfig, writeM5ctConfig } from './m5ct-config.js'
 import { runtimeInfo, runtimeLabel } from './runtime-version.js'
 
 export function listCommands(): readonly string[] {
-  return ['status', 'watch', 'flash', 'install', 'uninstall', 'version', 'screenshot', 'tap'] as const
+  return [
+    'status',
+    'watch',
+    'flash',
+    'install',
+    'uninstall',
+    'version',
+    'screenshot',
+    'tap',
+  ] as const
 }
 
 export interface CliIO {

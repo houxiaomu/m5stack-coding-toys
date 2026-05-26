@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { helloPayload, notifyPayload, pingPayload, statusPayload, tapPayload } from './messages-host.js'
+import {
+  helloPayload,
+  notifyPayload,
+  pingPayload,
+  statusPayload,
+  tapPayload,
+} from './messages-host.js'
 
 describe('statusPayload', () => {
   it('requires only state; all other fields optional', () => {
