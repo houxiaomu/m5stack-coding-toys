@@ -46,6 +46,7 @@ private:
     PageId                page_       = PageId::Overview;
     LinkState             link_       = LinkState::NoLink;
     uint32_t              lastRxMs_   = 0;
+    uint32_t              lastAnimMs_ = 0;
     bool                  dirty_      = true;
     uint32_t            (*now_)()     = nullptr;  // set in ctor to platform clock
 };

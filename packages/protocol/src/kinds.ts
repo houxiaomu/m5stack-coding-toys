@@ -25,5 +25,11 @@ export type Cap = (typeof CAPS)[number]
 export const STATES = ['active', 'idle'] as const
 export type State = (typeof STATES)[number]
 
+// What Claude is doing right now, derived from CC hook events (orthogonal to
+// `state` liveness). working = generating/running; awaiting_input = finished a
+// turn, waiting for the user; needs_attention = blocked (e.g. permission prompt).
+export const ACTIVITY = ['working', 'awaiting_input', 'needs_attention'] as const
+export type Activity = (typeof ACTIVITY)[number]
+
 export const URGENCY = ['low', 'normal', 'high'] as const
 export type Urgency = (typeof URGENCY)[number]

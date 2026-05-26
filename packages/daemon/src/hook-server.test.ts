@@ -1,9 +1,13 @@
 import { mkdtempSync } from 'node:fs'
-import { createConnection } from 'node:net'
+import { connect, createConnection } from 'node:net'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HookServer } from './hook-server.js'
+
+function sockPath() {
+  return resolve(mkdtempSync(resolve(tmpdir(), 'm5ct-hs-')), 'd.sock')
+}
 
 function rpc(socketPath: string, req: object): Promise<string> {
   return new Promise((res, rej) => {
@@ -64,4 +68,30 @@ describe('HookServer', () => {
       await server.close()
     }
   }, 5000)
+})
+
+describe('HookServer hook events', () => {
+  let srv: HookServer
+  afterEach(async () => {
+    await srv?.close()
+  })
+
+  it('routes {event} to the hook-event handler and acks', async () => {
+    const path = sockPath()
+    srv = new HookServer(path)
+    const seen: string[] = []
+    srv.setHookEventHandler((ev) => seen.push(ev))
+    await srv.listen()
+
+    const ack = await new Promise<string>((res) => {
+      const s = connect(path, () => s.end(`${JSON.stringify({ event: 'Stop' })}\n`))
+      let buf = ''
+      s.on('data', (c) => {
+        buf += c.toString()
+      })
+      s.on('close', () => res(buf))
+    })
+    expect(seen).toEqual(['Stop'])
+    expect(JSON.parse(ack)).toEqual({ ok: true })
+  })
 })

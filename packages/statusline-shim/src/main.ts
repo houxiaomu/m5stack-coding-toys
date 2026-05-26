@@ -22,6 +22,22 @@ export function buildDaemonPayload(cc: CC, ccPid: number | null): Record<string,
   return p
 }
 
+const HOOK_EVENTS = ['UserPromptSubmit', 'Stop', 'Notification'] as const
+type HookEvent = (typeof HOOK_EVENTS)[number]
+
+/** Extract a valid `--event <Name>` value, or undefined. */
+export function parseEventFlag(args: readonly string[]): HookEvent | undefined {
+  const i = args.indexOf('--event')
+  if (i === -1) return undefined
+  const v = args[i + 1]
+  return (HOOK_EVENTS as readonly string[]).includes(v ?? '') ? (v as HookEvent) : undefined
+}
+
+/** The NDJSON frame the daemon expects for a hook event. */
+export function buildHookPayload(event: HookEvent, sessionId?: string): Record<string, unknown> {
+  return sessionId ? { event, sessionId } : { event }
+}
+
 export function buildSummary(cc: CC): string {
   const parts: string[] = []
   if (cc.model?.display_name) parts.push(cc.model.display_name)
@@ -66,30 +82,33 @@ function readStdin(): Promise<string> {
 }
 
 async function main(): Promise<void> {
+  const eventName = parseEventFlag(process.argv.slice(2))
   const raw = await readStdin()
   let cc: CC = {}
   try {
     cc = JSON.parse(raw)
   } catch {
-    process.stdout.write('m5ct ·\n')
-    return
+    if (!eventName) process.stdout.write('m5ct ·\n')
+    // event mode has no stdout contract; still try to fire below using parsed {}
   }
-  // Best-effort fire-and-forget to the daemon; never block CC.
   const sockPath = process.env.M5CT_SOCKET ?? `${process.env.HOME}/.m5stack-coding-toys/daemon.sock`
+  const payload = eventName
+    ? buildHookPayload(eventName, cc.session_id)
+    : buildDaemonPayload(cc, currentClaudePid())
   try {
     const sock = connect(sockPath)
     const timer = setTimeout(() => sock.destroy(), 500)
-    timer.unref() // never hold the event loop open on its own
-    sock.on('error', () => {}) // daemon down → silently skip
+    timer.unref()
+    sock.on('error', () => {})
     sock.on('close', () => clearTimeout(timer))
     sock.on('connect', () => {
-      const payload = buildDaemonPayload(cc, currentClaudePid())
       sock.end(`${JSON.stringify(payload)}\n`)
     })
   } catch {
     // ignore
   }
   ensureDaemon()
+  if (eventName) return // hooks produce no status-line output
   const chained = chainedStatusLine()
   if (chained) {
     const passthrough = await runChained(chained, raw)

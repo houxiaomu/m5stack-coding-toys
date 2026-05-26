@@ -48,7 +48,67 @@ export function computeInstallPatch(
     added.push({ field: 'statusLine', command: statusLineBin })
   }
 
+  const existingHooks =
+    after.hooks && typeof after.hooks === 'object' ? (after.hooks as Record<string, unknown>) : {}
+  for (const event of HOOK_EVENTS) {
+    const cmd = `${statusLineBin} --event ${event}`
+    const groups = Array.isArray(existingHooks[event])
+      ? (existingHooks[event] as { hooks?: { command: string }[] }[])
+      : []
+    const present = groups.some((g) => g.hooks?.some((h) => h.command === cmd))
+    if (!present) added.push({ field: `hooks.${event}`, command: cmd })
+  }
+  after = { ...after, hooks: computeHooksPatch(existingHooks, statusLineBin) }
+
   return { path, before, after, added, chainedCommand }
+}
+
+export const HOOK_EVENTS = ['UserPromptSubmit', 'Stop', 'Notification'] as const
+
+interface HookGroup {
+  hooks: { type: string; command: string }[]
+  [k: string]: unknown
+}
+
+function hookCommand(bin: string, event: string): string {
+  return `${bin} --event ${event}`
+}
+
+/** Merge our three CC hooks into an existing `hooks` object, preserving others
+ *  and never duplicating our own group. Returns the new hooks object. */
+export function computeHooksPatch(
+  before: Record<string, unknown>,
+  bin: string,
+): Record<string, unknown> {
+  const after: Record<string, unknown> = { ...before }
+  for (const event of HOOK_EVENTS) {
+    const cmd = hookCommand(bin, event)
+    const groups = (
+      Array.isArray(after[event]) ? [...(after[event] as HookGroup[])] : []
+    ) as HookGroup[]
+    const already = groups.some((g) => g.hooks?.some((h) => h.command === cmd))
+    if (!already) groups.push({ hooks: [{ type: 'command', command: cmd }] })
+    after[event] = groups
+  }
+  return after
+}
+
+/** Remove only our hook groups; drop an event key that ends up empty. */
+export function computeHooksUninstall(
+  before: Record<string, unknown>,
+  bin: string,
+): Record<string, unknown> {
+  const after: Record<string, unknown> = { ...before }
+  for (const event of HOOK_EVENTS) {
+    if (!Array.isArray(after[event])) continue
+    const cmd = hookCommand(bin, event)
+    const kept = (after[event] as HookGroup[]).filter(
+      (g) => !g.hooks?.some((h) => h.command === cmd),
+    )
+    if (kept.length > 0) after[event] = kept
+    else delete after[event]
+  }
+  return after
 }
 
 export interface UninstallPatch {
@@ -68,6 +128,13 @@ export function computeUninstall(home: string = homedir(), chained?: string): Un
     after.statusLine = { type: 'command', command: chained, padding: 0 }
   } else {
     after.statusLine = undefined
+  }
+  if (after.hooks && typeof after.hooks === 'object') {
+    const stripped = computeHooksUninstall(
+      after.hooks as Record<string, unknown>,
+      'm5ct-statusline',
+    )
+    after.hooks = Object.keys(stripped).length > 0 ? stripped : undefined
   }
   return { path, before, after }
 }

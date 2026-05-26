@@ -124,16 +124,47 @@ void test_workspace_clean_renders_status_and_commit() {
   TEST_ASSERT_TRUE(c.called("text", "2314b8b"));
 }
 
-void test_header_warning_badge_when_ctx_high() {
-  StatusModel m; m.hasContext = true; m.ctxUsedPct = 92;
-  MockCanvas c; renderHeader(m, c);
-  TEST_ASSERT_TRUE(c.called("text", "CTX HIGH"));
+void test_activity_label_maps_each_state() {
+  TEST_ASSERT_EQUAL_STRING("WORKING", activityLabel(Activity::Working));
+  TEST_ASSERT_EQUAL_STRING("YOUR TURN", activityLabel(Activity::AwaitingInput));
+  TEST_ASSERT_EQUAL_STRING("NEEDS YOU", activityLabel(Activity::NeedsAttention));
 }
 
-void test_header_badge_working_when_no_warn() {
-  StatusModel m; m.hasContext = true; m.ctxUsedPct = 10;
+void test_activity_color_maps_each_state() {
+  TEST_ASSERT_EQUAL_UINT16(color::good, activityColor(Activity::Working));
+  TEST_ASSERT_EQUAL_UINT16(color::accent, activityColor(Activity::AwaitingInput));
+  TEST_ASSERT_EQUAL_UINT16(color::warn, activityColor(Activity::NeedsAttention));
+}
+
+void test_blend565_endpoints_and_midpoint() {
+  TEST_ASSERT_EQUAL_UINT16(0xF800, blend565(0xF800, 0x0000, 255)); // t=255 -> fg
+  TEST_ASSERT_EQUAL_UINT16(0x0000, blend565(0xF800, 0x0000, 0));   // t=0   -> bg
+  // midpoint: red(31,0,0) blended halfway toward black ~ (15,0,0)
+  TEST_ASSERT_EQUAL_UINT16(0x7800, blend565(0xF800, 0x0000, 128));
+}
+
+void test_header_badge_shows_working_by_default() {
+  StatusModel m;  // default activity = Working
   MockCanvas c; renderHeader(m, c);
   TEST_ASSERT_TRUE(c.called("text", "WORKING"));
+}
+
+void test_header_badge_shows_your_turn_when_awaiting() {
+  StatusModel m; m.activity = Activity::AwaitingInput;
+  MockCanvas c; renderHeader(m, c);
+  TEST_ASSERT_TRUE(c.called("text", "YOUR TURN"));
+  TEST_ASSERT_FALSE(c.called("text", "WORKING"));
+}
+
+void test_header_badge_shows_needs_you_when_attention() {
+  StatusModel m; m.activity = Activity::NeedsAttention;
+  MockCanvas c; renderHeader(m, c);
+  TEST_ASSERT_TRUE(c.called("text", "NEEDS YOU"));
+}
+
+void test_header_badge_never_shows_ctx_high() {
+  StatusModel m; m.hasContext = true; m.ctxUsedPct = 95; m.exceeds200k = true;
+  MockCanvas c; renderHeader(m, c);
   TEST_ASSERT_FALSE(c.called("text", "CTX HIGH"));
 }
 
@@ -178,6 +209,23 @@ void test_waiting_nolink_shows_waiting_copy() {
   TEST_ASSERT_TRUE(c.called("text", "Waiting for host"));
 }
 
+void test_badge_brightness_blink_is_high_contrast() {
+  // needs_attention blinks ~500ms: full at phase start, low at half period.
+  uint8_t on  = badgeBrightnessFor(Activity::NeedsAttention, 0);
+  uint8_t off = badgeBrightnessFor(Activity::NeedsAttention, 250);
+  TEST_ASSERT_TRUE(on > 200);
+  TEST_ASSERT_TRUE(off < 80);
+}
+
+void test_badge_brightness_working_breathes_smoothly() {
+  // working breathes ~2000ms: full near phase 0, dim near half period, never
+  // fully off (calm, not a blink).
+  uint8_t hi  = badgeBrightnessFor(Activity::Working, 0);
+  uint8_t lo  = badgeBrightnessFor(Activity::Working, 1000);
+  TEST_ASSERT_TRUE(hi > lo);
+  TEST_ASSERT_TRUE(lo >= 60);  // floor so green stays visible
+}
+
 void setup() {
   UNITY_BEGIN();
   RUN_TEST(test_overview_renders_context_tile_with_bar);
@@ -191,14 +239,21 @@ void setup() {
   RUN_TEST(test_workspace_degrades_when_no_git);
   RUN_TEST(test_workspace_dirty_renders_dense_diff);
   RUN_TEST(test_workspace_clean_renders_status_and_commit);
-  RUN_TEST(test_header_warning_badge_when_ctx_high);
-  RUN_TEST(test_header_badge_working_when_no_warn);
+  RUN_TEST(test_activity_label_maps_each_state);
+  RUN_TEST(test_activity_color_maps_each_state);
+  RUN_TEST(test_blend565_endpoints_and_midpoint);
+  RUN_TEST(test_header_badge_shows_working_by_default);
+  RUN_TEST(test_header_badge_shows_your_turn_when_awaiting);
+  RUN_TEST(test_header_badge_shows_needs_you_when_attention);
+  RUN_TEST(test_header_badge_never_shows_ctx_high);
   RUN_TEST(test_cost_rows_degrade_when_no_today_or_weekly);
   RUN_TEST(test_header_status_dot_drawn);
   RUN_TEST(test_page_dots_draws_four);
   RUN_TEST(test_overview_renders_header_and_dots);
   RUN_TEST(test_waiting_linked_shows_connected_copy);
   RUN_TEST(test_waiting_nolink_shows_waiting_copy);
+  RUN_TEST(test_badge_brightness_blink_is_high_contrast);
+  RUN_TEST(test_badge_brightness_working_breathes_smoothly);
   UNITY_END();
 }
 void loop() {}

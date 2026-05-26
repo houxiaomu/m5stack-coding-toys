@@ -4,9 +4,19 @@
 
 namespace m5render {
 
+// What Claude is doing right now (mirrors protocol ACTIVITY). Drives the
+// header badge color + animation. Defaults to Working when the host omits it.
+enum class Activity : uint8_t { Working, AwaitingInput, NeedsAttention };
+
 struct StatusModel {
   // Coarse session liveness from the daemon: true for `active`, false for `idle`.
   bool sessionActive = true;
+
+  // Activity badge state + transient animation brightness (255 = full color,
+  // 0 = faded to background). badgeBrightness is set by the app's animation
+  // timer each frame; it is not parsed from the wire.
+  Activity activity = Activity::Working;
+  uint8_t  badgeBrightness = 255;
 
   // model
   char modelShort[24] = "";

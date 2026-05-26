@@ -1,11 +1,13 @@
 export { PROTOCOL_VERSION, envelopeSchema, type Envelope } from './envelope.js'
 export {
+  ACTIVITY,
   ALL_KINDS,
   CAPS,
   DEVICE_KINDS,
   HOST_KINDS,
   STATES,
   URGENCY,
+  type Activity,
   type Cap,
   type DeviceKind,
   type HostKind,

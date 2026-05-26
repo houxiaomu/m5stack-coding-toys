@@ -10,6 +10,45 @@ namespace m5render {
 // Placeholder rendered for any data group whose has* flag is false.
 static const char* kDash = "—";
 
+const char* activityLabel(Activity a) {
+  switch (a) {
+    case Activity::AwaitingInput:  return "YOUR TURN";
+    case Activity::NeedsAttention: return "NEEDS YOU";
+    default:                       return "WORKING";
+  }
+}
+
+uint16_t activityColor(Activity a) {
+  switch (a) {
+    case Activity::AwaitingInput:  return color::accent;
+    case Activity::NeedsAttention: return color::warn;
+    default:                       return color::good;
+  }
+}
+
+uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t t) {
+  auto lerp = [&](int a, int b) { return b + ((a - b) * t) / 255; };
+  int rf = (fg >> 11) & 0x1F, gf = (fg >> 5) & 0x3F, bf = fg & 0x1F;
+  int rb = (bg >> 11) & 0x1F, gb = (bg >> 5) & 0x3F, bb = bg & 0x1F;
+  int r = lerp(rf, rb), g = lerp(gf, gb), b = lerp(bf, bb);
+  return static_cast<uint16_t>((r << 11) | (g << 5) | b);
+}
+
+uint8_t badgeBrightnessFor(Activity a, uint32_t nowMs) {
+  uint32_t period; uint8_t floorB;
+  switch (a) {
+    case Activity::NeedsAttention: period = 500;  floorB = 0;  break; // hard blink
+    case Activity::AwaitingInput:  period = 1200; floorB = 100; break; // gentle pulse
+    default:                       period = 2000; floorB = 60;  break; // calm breathe
+  }
+  // Triangle wave: 255 at phase 0, floorB at half period, back up.
+  uint32_t t = nowMs % period;
+  uint32_t half = period / 2;
+  uint32_t up = t < half ? (half - t) : (t - half);   // half..0..half across the period
+  uint32_t span = 255 - floorB;
+  return static_cast<uint8_t>(floorB + (span * up) / half);
+}
+
 // ── shared header (top bar across all 4 data pages) ─────────────────────────
 void renderHeader(const StatusModel& m, Canvas& c) {
   M5CT_DBG("hdr start");
@@ -23,15 +62,13 @@ void renderHeader(const StatusModel& m, Canvas& c) {
   const char* model = m.modelShort[0] ? m.modelShort : "Claude";
   c.text(model, 26, 17, Font::Title, Align::MiddleLeft, color::ink);
 
-  // State badge top-right. Warning takes precedence (ctx>=80 or exceeds200k).
-  bool ctxWarn = m.hasContext && (m.exceeds200k || m.ctxUsedPct >= 80);
-  const char* badge = "WORKING";
-  uint16_t bColor = color::accent, bBg = color::accSoft;
-  if (ctxWarn) { badge = "CTX HIGH"; bColor = color::warn; bBg = color::accSoft; }
-
+  // Activity badge top-right. Color + label come from m.activity; brightness is
+  // the app's animation phase (255 = full color). Context warning is NOT shown
+  // here — the data-page context tiles already render warn color over threshold.
+  const char* badge = activityLabel(m.activity);
+  uint16_t bColor = blend565(activityColor(m.activity), color::bg, m.badgeBrightness);
   int bw = c.measureText(badge, Font::Label) + 8;
-  M5CT_DBG("hdr measureText bw=%d", bw);
-  c.fillRoundRect(316 - bw, 9, bw, 16, 3, bBg);
+  c.fillRoundRect(316 - bw, 9, bw, 16, 3, color::accSoft);
   c.text(badge, 316 - bw / 2, 17, Font::Label, Align::MiddleCenter, bColor);
 
   // Hairline under header.

@@ -11,6 +11,12 @@ static void copyStr(char* dst, size_t cap, const char* src) {
 
 bool parseStatusFrame(JsonObjectConst doc, StatusModel& m) {
   m.sessionActive = strcmp(doc["state"] | "active", "idle") != 0;
+  {
+    const char* act = doc["activity"] | "working";
+    if (strcmp(act, "needs_attention") == 0) m.activity = Activity::NeedsAttention;
+    else if (strcmp(act, "awaiting_input") == 0) m.activity = Activity::AwaitingInput;
+    else m.activity = Activity::Working;
+  }
   if (doc["model"]["short"].is<const char*>()) copyStr(m.modelShort, sizeof(m.modelShort), doc["model"]["short"]);
 
   if (doc["context"].is<JsonObjectConst>()) {
