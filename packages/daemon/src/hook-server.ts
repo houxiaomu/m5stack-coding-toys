@@ -21,11 +21,16 @@ export class HookServer {
     | ((cc: Record<string, unknown>, meta: { ccPid?: number; sessionId?: string }) => void)
     | null = null
   private onActivity: (() => void) | null = null
+  private onHookEvent: ((event: string) => void) | null = null
 
   constructor(private readonly socketPath: string) {}
 
   setActivityHandler(fn: () => void): void {
     this.onActivity = fn
+  }
+
+  setHookEventHandler(fn: (event: string) => void): void {
+    this.onHookEvent = fn
   }
 
   setControl(c: ControlHandler): void {
@@ -102,6 +107,12 @@ export class HookServer {
         ccPid: typeof ccPid === 'number' ? ccPid : undefined,
         sessionId: typeof sessionId === 'string' ? sessionId : undefined,
       })
+      sock.end(`${JSON.stringify({ ok: true })}\n`)
+      return
+    }
+    const ev = (msg as { event?: unknown }).event
+    if (typeof ev === 'string') {
+      this.onHookEvent?.(ev)
       sock.end(`${JSON.stringify({ ok: true })}\n`)
       return
     }
