@@ -34,6 +34,21 @@ uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t t) {
   return static_cast<uint16_t>((r << 11) | (g << 5) | b);
 }
 
+uint8_t badgeBrightnessFor(Activity a, uint32_t nowMs) {
+  uint32_t period; uint8_t floorB;
+  switch (a) {
+    case Activity::NeedsAttention: period = 500;  floorB = 0;  break; // hard blink
+    case Activity::AwaitingInput:  period = 1200; floorB = 100; break; // gentle pulse
+    default:                       period = 2000; floorB = 60;  break; // calm breathe
+  }
+  // Triangle wave: 255 at phase 0, floorB at half period, back up.
+  uint32_t t = nowMs % period;
+  uint32_t half = period / 2;
+  uint32_t up = t < half ? (half - t) : (t - half);   // half..0..half across the period
+  uint32_t span = 255 - floorB;
+  return static_cast<uint8_t>(floorB + (span * up) / half);
+}
+
 // ── shared header (top bar across all 4 data pages) ─────────────────────────
 void renderHeader(const StatusModel& m, Canvas& c) {
   M5CT_DBG("hdr start");

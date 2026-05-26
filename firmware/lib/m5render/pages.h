@@ -12,6 +12,9 @@ const char* activityLabel(Activity a);
 uint16_t    activityColor(Activity a);
 // Linear RGB565 blend: t=255 -> fg, t=0 -> bg, per 5/6/5 channel.
 uint16_t    blend565(uint16_t fg, uint16_t bg, uint8_t t);
+// Animation brightness (0..255) for an activity at wall-clock nowMs. Breathe
+// for Working, gentle pulse for AwaitingInput, hard blink for NeedsAttention.
+uint8_t badgeBrightnessFor(Activity a, uint32_t nowMs);
 
 // Device-agnostic page renderers. Each draws using only Canvas primitives and
 // semantic Font tiers; they never touch device GFX directly.

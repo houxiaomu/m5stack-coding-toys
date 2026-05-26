@@ -51,6 +51,17 @@ void App::tick() {
     pollInput();
     checkLink();
 
+    // Animate the activity badge: while Live, refresh brightness on a ~120ms
+    // cadence so the breathe/pulse/blink advances without redrawing every loop.
+    if (link_ == LinkState::Live && now() - lastAnimMs_ >= 120) {
+        lastAnimMs_ = now();
+        uint8_t b = badgeBrightnessFor(model_.activity, now());
+        if (b != model_.badgeBrightness) {
+            model_.badgeBrightness = b;
+            dirty_ = true;
+        }
+    }
+
     if (board_->transport) {
         uint8_t buf[256];
         int n = board_->transport->read(buf, sizeof(buf));
