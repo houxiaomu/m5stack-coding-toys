@@ -1,0 +1,9 @@
+# Firmware / hardware gotchas (ESP32-S3 / CoreS3)
+
+Hardware-only failure modes found on real CoreS3 SE:
+
+- **Serial RX buffer (the big one):** ESP32-S3 HWCDC RX FIFO defaults to **256B**. Git-enriched status frames exceed 700B and arrived truncated → decode failed → device silently stuck on Waiting (small frames <256B worked, masking it). Fix: `Serial.setRxBufferSize(4096)` before `begin` in the CoreS3 transport + grew the NDJSON framer. **When adding frame fields or supporting a new board, keep status frames within the device RX buffer or bump it.**
+- **Native USB-CDC ignores nominal baud:** CoreS3 native USB-CDC transfers run at full USB speed regardless of the configured baud (153.6KB in ~754ms) — don't reason about throughput from the baud setting.
+- **Auto-reset is a no-op:** CoreS3 auto-reset doesn't work; flashing requires a human RESET press. Flash via the `m5stack-cores3-bring-up` skill (`.claude/skills/m5stack-cores3-bring-up/`) — UiFlow2 blocks first flash, USB_MODE matters.
+- **Orphan daemons grab the serial port:** a stale daemon from a prior session can linger (PPID 1, old dist code) and silently grab the port, causing a phantom "Connected" state. Catch with `ps -ax | grep daemon/dist/main.js`. The singleton / idle-exit work (see [daemon-singleton-and-install.md](daemon-singleton-and-install.md)) largely fixes this.
+- **Gated serial debug:** `-DM5CT_DEBUG` / `cores3-se-debug` env + `M5CT_DBG` macro is a dev-only bring-up aid, off by default; the daemon skips non-`{` serial lines so debug output doesn't spam its log.
