@@ -4,8 +4,10 @@ import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   buildDaemonPayload,
+  buildHookPayload,
   buildSummary,
   chainedStatusLine,
+  parseEventFlag,
   printVersionIfRequested,
 } from './main.js'
 
@@ -87,5 +89,24 @@ describe('m5ct-statusline --version entry behavior', () => {
     const out: string[] = []
     expect(printVersionIfRequested([], (line) => out.push(line))).toBe(false)
     expect(out).toEqual([])
+  })
+})
+
+describe('--event flag', () => {
+  it('parses a valid event name', () => {
+    expect(parseEventFlag(['--event', 'Stop'])).toBe('Stop')
+    expect(parseEventFlag(['--event', 'UserPromptSubmit'])).toBe('UserPromptSubmit')
+    expect(parseEventFlag(['--event', 'Notification'])).toBe('Notification')
+  })
+
+  it('returns undefined for missing or unknown events', () => {
+    expect(parseEventFlag([])).toBeUndefined()
+    expect(parseEventFlag(['--event', 'Bogus'])).toBeUndefined()
+    expect(parseEventFlag(['--event'])).toBeUndefined()
+  })
+
+  it('builds a hook payload with optional sessionId', () => {
+    expect(buildHookPayload('Stop', 'sess-1')).toEqual({ event: 'Stop', sessionId: 'sess-1' })
+    expect(buildHookPayload('Stop')).toEqual({ event: 'Stop' })
   })
 })
