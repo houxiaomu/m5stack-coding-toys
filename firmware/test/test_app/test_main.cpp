@@ -104,17 +104,19 @@ void test_usb_disconnect_reverts_to_nolink_immediately() {
                     static_cast<int>(app.link()));
 }
 
-void test_screenshot_returns_ack_with_png() {
+void test_screenshot_returns_ack_with_raw_frame() {
   MockTransport t; MockCanvas c; Board b = makeBoard(t);
   App app(c, &b); app.setNowFn(mockNow);
   const char* req = "{\"v\":1,\"k\":\"screenshot\",\"t\":0,\"id\":\"m1\",\"p\":{\"fmt\":\"png\"}}";
   app.handleLine(req, std::strlen(req));
 
-  TEST_ASSERT_TRUE(c.calledPrefix("capturePng"));   // MockCanvas recorded "capturePng"
+  TEST_ASSERT_TRUE(c.calledPrefix("rawFrame"));   // MockCanvas recorded "rawFrame"
   const std::string tx = t.drain_tx();
   TEST_ASSERT_TRUE(tx.find("\"k\":\"screenshot.ack\"") != std::string::npos);
   TEST_ASSERT_TRUE(tx.find("\"id\":\"m1\"") != std::string::npos);
-  TEST_ASSERT_TRUE(tx.find("\"png_b64\":\"iVBORw==\"") != std::string::npos);
+  TEST_ASSERT_TRUE(tx.find("\"fmt\":\"rgb565\"") != std::string::npos);
+  // MockCanvas streams a canned 2×2 frame {0x12..0xf0} → base64 "EjRWeJq83vA=".
+  TEST_ASSERT_TRUE(tx.find("\"data_b64\":\"EjRWeJq83vA=\"") != std::string::npos);
 }
 
 int main(int, char**) {
@@ -126,6 +128,6 @@ int main(int, char**) {
   RUN_TEST(test_live_persists_while_only_pings_arrive);
   RUN_TEST(test_link_silence_reverts_to_nolink);
   RUN_TEST(test_usb_disconnect_reverts_to_nolink_immediately);
-  RUN_TEST(test_screenshot_returns_ack_with_png);
+  RUN_TEST(test_screenshot_returns_ack_with_raw_frame);
   return UNITY_END();
 }

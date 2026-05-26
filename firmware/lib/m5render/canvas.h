@@ -1,6 +1,6 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
-#include <vector>
 
 namespace m5render {
 
@@ -57,10 +57,16 @@ public:
   virtual void text(const char* s, int x, int y, Font f, Align a, uint16_t fg) = 0;
   virtual int  measureText(const char* s, Font f) = 0;
 
-  // Capture the current frame as PNG bytes into `out`. Returns false if the
-  // device/canvas cannot produce a screenshot. Default: unsupported.
-  virtual bool capturePng(std::vector<uint8_t>& out) {
-    (void)out;
+  // Expose the current frame's raw pixel buffer (no copy) for screen capture.
+  // On success sets the out-params and returns true. PNG encoding is done
+  // host-side — the device can't deflate a full frame in reasonable time — so
+  // the app streams these raw bytes out. Default: unsupported.
+  virtual bool rawFrame(const uint8_t** data, std::size_t* len, int* w, int* h, const char** fmt) {
+    (void)data;
+    (void)len;
+    (void)w;
+    (void)h;
+    (void)fmt;
     return false;
   }
 };
