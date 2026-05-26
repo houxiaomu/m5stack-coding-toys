@@ -51,6 +51,35 @@ describe('statusPayload', () => {
     expect(parsed.git).toBeUndefined()
     expect(parsed.weekly).toBeUndefined()
   })
+
+  it('accepts git diff summary fields', () => {
+    const parsed = statusPayload.parse({
+      state: 'active',
+      git: {
+        branch: 'feat/workspace-ui',
+        diff: {
+          filesChanged: 4,
+          linesAdded: 128,
+          linesRemoved: 24,
+          topFiles: [
+            { path: 'firmware/lib/m5render/pages.cpp', added: 84, removed: 12 },
+            { path: 'firmware/lib/m5render/status_model.h', added: 18, removed: 0 },
+          ],
+        },
+      },
+    })
+
+    expect(parsed.git?.diff?.topFiles?.[0]?.path).toBe('firmware/lib/m5render/pages.cpp')
+  })
+
+  it('keeps git diff optional for older daemons', () => {
+    expect(
+      statusPayload.safeParse({
+        state: 'active',
+        git: { branch: 'main', staged: 0, unstaged: 0, untracked: 0 },
+      }).success,
+    ).toBe(true)
+  })
 })
 
 describe('retained host messages', () => {

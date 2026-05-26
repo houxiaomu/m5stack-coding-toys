@@ -58,6 +58,22 @@ export const statusPayload = z.object({
       unstaged: nonNegInt,
       untracked: nonNegInt,
       lastCommit: z.object({ hash: z.string(), msg: z.string(), minsAgo: nonNegInt }).partial(),
+      diff: z
+        .object({
+          filesChanged: nonNegInt,
+          linesAdded: nonNegInt,
+          linesRemoved: nonNegInt,
+          topFiles: z
+            .array(
+              z.object({
+                path: z.string(),
+                added: nonNegInt,
+                removed: nonNegInt,
+              }),
+            )
+            .max(3),
+        })
+        .partial(),
     })
     .partial()
     .optional(),
