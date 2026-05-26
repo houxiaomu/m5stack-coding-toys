@@ -83,6 +83,26 @@ void test_git_diff_parses_summary_and_clamps_top_files() {
   TEST_ASSERT_EQUAL(10, m.topFiles[2].removed);
 }
 
+void test_activity_defaults_to_working_when_absent() {
+  StatusModel m;
+  TEST_ASSERT_TRUE(parseStatusFrame("{\"state\":\"active\"}", m));
+  TEST_ASSERT_EQUAL(static_cast<int>(Activity::Working), static_cast<int>(m.activity));
+}
+
+void test_activity_parses_all_three_values() {
+  StatusModel a;
+  TEST_ASSERT_TRUE(parseStatusFrame("{\"state\":\"active\",\"activity\":\"working\"}", a));
+  TEST_ASSERT_EQUAL(static_cast<int>(Activity::Working), static_cast<int>(a.activity));
+
+  StatusModel b;
+  TEST_ASSERT_TRUE(parseStatusFrame("{\"state\":\"active\",\"activity\":\"awaiting_input\"}", b));
+  TEST_ASSERT_EQUAL(static_cast<int>(Activity::AwaitingInput), static_cast<int>(b.activity));
+
+  StatusModel c;
+  TEST_ASSERT_TRUE(parseStatusFrame("{\"state\":\"active\",\"activity\":\"needs_attention\"}", c));
+  TEST_ASSERT_EQUAL(static_cast<int>(Activity::NeedsAttention), static_cast<int>(c.activity));
+}
+
 void setup() {
   UNITY_BEGIN();
   RUN_TEST(test_minimal_frame_sets_sessionActive);
@@ -91,6 +111,8 @@ void setup() {
   RUN_TEST(test_burn_history_keeps_most_recent_16);
   RUN_TEST(test_state_active_and_idle_map_to_sessionActive);
   RUN_TEST(test_git_diff_parses_summary_and_clamps_top_files);
+  RUN_TEST(test_activity_defaults_to_working_when_absent);
+  RUN_TEST(test_activity_parses_all_three_values);
   UNITY_END();
 }
 void loop() {}
