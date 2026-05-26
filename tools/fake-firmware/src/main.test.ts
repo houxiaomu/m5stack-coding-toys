@@ -88,9 +88,10 @@ describe('fake-firmware e2e', () => {
       const env = decode(reply)
       expect(env.k).toBe('screenshot.ack')
       expect(env.id).toBe('m1')
-      const p = env.p as { ok: boolean; png_b64?: string }
+      const p = env.p as { ok: boolean; fmt?: string; data_b64?: string }
       expect(p.ok).toBe(true)
-      expect(typeof p.png_b64).toBe('string')
+      expect(p.fmt).toBe('rgb565')
+      expect(typeof p.data_b64).toBe('string')
     } finally {
       fake.kill()
     }

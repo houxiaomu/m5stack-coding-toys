@@ -62,11 +62,15 @@ function handle(board: Board, raw: string): void {
     return
   }
   if (env.k === 'screenshot') {
+    // Emulate the device: reply with a raw 2×2 rgb565 frame (host encodes PNG).
+    const data_b64 = Buffer.from([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]).toString(
+      'base64',
+    )
     send(
       encode({
         k: 'screenshot.ack',
         ...(env.id ? { id: env.id } : {}),
-        p: { ok: true, w: 320, h: 240, fmt: 'png', png_b64: 'iVBORw==' },
+        p: { ok: true, w: 2, h: 2, fmt: 'rgb565', data_b64 },
       }),
     )
     return

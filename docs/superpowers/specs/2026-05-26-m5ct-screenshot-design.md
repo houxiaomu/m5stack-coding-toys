@@ -258,3 +258,23 @@ if (env.k === 'screenshot') {
 3. fake-firmware 集成路径下，`m5ct screenshot` 把正确字节写到 `~/.m5stack-coding-toys/screenshots/<ts>.png`，`-o` 覆盖生效。
 4. 触发截屏期间 daemon 不重启、串口会话不中断（复用 control socket + 现有 session 验证）。
 5. （硬件，用户在场）真机截到的 PNG 与屏幕一致。
+
+---
+
+## 11. 硬件验收发现与方案修订（2026-05-26，已在 CoreS3 SE 上 HW-VERIFIED）
+
+**方案 A 的"设备端 createPng 出 PNG"在真机上不可用，已改为"设备发原始 RGB565、主机编码 PNG"。**
+
+真机 bring-up（CoreS3 SE）依次踩到三个坑：
+
+1. **`createPng(&len)` 默认参数返回 null**：M5GFX `LGFXBase::createPng` 第一行 `_adjust_abs(x,w)` 对 `w==0` 返回 true → 直接 `return nullptr`。即默认的 0 尺寸被当作非法，必须显式传 `w/h`。（一度误判为 `BOARD_HAS_PSRAM`/内存问题——其实板子已定义该宏、PSRAM 有 8MB 空闲。）
+2. **即便传对 w/h，全屏 PNG deflate 也不可用**：miniz 的压缩器（`tdefl_compressor` + 输出缓冲，约 380KB）走 `MZ_MALLOC`→PSRAM，但 deflate 对 PSRAM 的大量随机访问极慢——320×240 编码 **>180s 仍未返回**（实测 createPng 卡死级慢）。结论：ESP32-S3 上别在设备做整屏 PNG 压缩。
+3. **大 base64 串放不进内部堆**：320×240 RGB565=153.6KB，base64≈204KB；ESP32 `std::string` 默认走内部堆（仅 ~360KB 且碎片化），单条大串会失败。
+
+**修订后的实现（as-built）：**
+- 设备：`Canvas::rawFrame()` 零拷贝暴露离屏 sprite 的 RGB565 缓冲（`sprite_.getBuffer()`）；`App` 用 `base64EncodeStream` 把像素**分块流式**写串口，不构造大串。帧格式 `screenshot.ack.p = {ok,w,h,fmt:"rgb565",data_b64}`（`png_b64`→`data_b64`，`fmt` 由 `'png'` 字面量改为字符串）。
+- 主机：daemon 新增 `src/png.ts`（Node 内置 `zlib` + 手写 PNG chunk/CRC，无新依赖），把 RGB565 解码为 PNG 落盘。
+- **字节序**：CoreS3 sprite 缓冲是**大端 RGB565**（高字节在前），daemon 按 `(hi<<8)|lo` 读取（实测小端颜色错乱、大端正确）。
+- **传输速度**：CoreS3 是原生 USB-CDC，标称 115200 实际按 USB 速率传，整帧 **~754ms** 完成；不需要改波特率。
+
+**HW 验收结果（2026-05-26，CoreS3 SE）：`m5ct screenshot` 与 `m5ct screenshot -o <path>` 均成功，PNG 320×240 颜色与屏幕一致，截屏期间 daemon 保持 Connected（未重启、串口会话不断）。**
