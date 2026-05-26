@@ -1,5 +1,6 @@
 #include "pages.h"
 
+#include <cstring>
 #include <cstdio>
 
 #include "dbg.h"
@@ -75,6 +76,49 @@ static void drawTile(Canvas& c, int x, int y, int w, int h,
   if (has && barPct >= 0)
     c.microBar(x + 6, y + h - 10, w - 12, 3, barPct,
                barWarn ? color::warn : color::ink);
+}
+
+static const char* basenameOf(const char* path) {
+  if (!path || !*path) return kDash;
+  const char* slash = std::strrchr(path, '/');
+  return slash && slash[1] ? slash + 1 : path;
+}
+
+static const char* tailPath(const char* path, int segments, char* out, size_t cap) {
+  if (!path || !*path) {
+    snprintf(out, cap, "%s", kDash);
+    return out;
+  }
+
+  const char* start = path + std::strlen(path);
+  int seen = 0;
+  while (start > path) {
+    --start;
+    if (*start == '/' && ++seen >= segments) {
+      ++start;
+      break;
+    }
+  }
+  snprintf(out, cap, "/%s", start);
+  return out;
+}
+
+static const char* truncateHead(const char* s, int maxChars, char* out, size_t cap) {
+  if (!s) s = "";
+  int len = static_cast<int>(std::strlen(s));
+  if (len <= maxChars) return s;
+  int keep = maxChars > 3 ? maxChars - 3 : maxChars;
+  snprintf(out, cap, "%.*s...", keep, s);
+  return out;
+}
+
+static const char* truncateTail(const char* s, int maxChars, char* out, size_t cap) {
+  if (!s) s = "";
+  int len = static_cast<int>(std::strlen(s));
+  if (len <= maxChars) return s;
+  int keep = maxChars > 3 ? maxChars - 3 : maxChars;
+  snprintf(out, cap, "...%s", s + len - keep);
+  return out;
 }
 
 // ── PAGE · Overview ─────────────────────────────────────────────────────────
@@ -213,23 +257,73 @@ static void drawWorkspace(const StatusModel& m, Canvas& c) {
     return;
   }
 
-  c.text(m.branch[0] ? m.branch : kDash, 10, 42, Font::Title, Align::TopLeft, color::ink);
+  const bool dirty = m.staged > 0 || m.unstaged > 0 || m.untracked > 0;
+  const int linesAdded = m.hasDiff ? m.diffLinesAdded : m.linesAdded;
+  const int linesRemoved = m.hasDiff ? m.diffLinesRemoved : m.linesRemoved;
 
   char ab[24];
   snprintf(ab, sizeof(ab), "^%d v%d", m.ahead, m.behind);
-  c.text(ab, 310, 44, Font::Label, Align::TopRight, color::mute);
 
-  c.text(m.wsDir[0] ? m.wsDir : kDash, 10, 62, Font::Label, Align::TopLeft, color::ink2);
-  c.drawHLine(10, 78, 300, color::hairline);
+  c.text(m.branch[0] ? m.branch : kDash, 10, 42, Font::Title, Align::TopLeft, color::ink);
+  c.text(dirty ? "dirty" : "clean", 310, 42, Font::Label, Align::TopRight,
+         dirty ? color::warn : color::accent);
+  c.text(ab, 310, 58, Font::Label, Align::TopRight, color::mute);
 
-  char diff[48];
-  snprintf(diff, sizeof(diff), "+%d  -%d   %dS %dM %dU",
-           m.linesAdded, m.linesRemoved, m.staged, m.unstaged, m.untracked);
-  c.text(diff, 10, 90, Font::Label, Align::TopLeft, color::ink);
+  char repoName[24], rawPathHint[48], pathHint[32];
+  const char* workspaceName = m.wsWorktree[0] ? m.wsWorktree : basenameOf(m.wsDir);
+  c.text(truncateHead(workspaceName, 18, repoName, sizeof(repoName)),
+         10, 64, Font::Label, Align::TopLeft, color::ink2);
+  c.text(truncateTail(tailPath(m.wsDir, 2, rawPathHint, sizeof(rawPathHint)),
+                      24, pathHint, sizeof(pathHint)),
+         310, 64, Font::Label, Align::TopRight, color::mute);
+  c.drawHLine(10, 80, 300, color::hairline);
 
-  if (m.lastCommitMsg[0]) {
-    c.text(m.lastCommitHash, 10, 200, Font::Mono, Align::TopLeft, color::mute);
-    c.text(m.lastCommitMsg, 60, 200, Font::Label, Align::TopLeft, color::ink);
+  int y = 92;
+  auto row = [&](const char* label, const char* value) {
+    c.text(label, 10, y, Font::Label, Align::TopLeft, color::mute);
+    c.text(value, 310, y, Font::Label, Align::TopRight, color::ink);
+    y += 24;
+  };
+
+  if (dirty) {
+    char files[48];
+    snprintf(files, sizeof(files), "%d staged   %d modified   %d new",
+             m.staged, m.unstaged, m.untracked);
+    row("Files", files);
+
+    char lines[32];
+    snprintf(lines, sizeof(lines), "+%d       -%d", linesAdded, linesRemoved);
+    row("Lines", lines);
+
+    c.text("Top", 10, y, Font::Label, Align::TopLeft, color::mute);
+    y += 16;
+    if (m.topFileN > 0) {
+      const int n = m.topFileN > 3 ? 3 : m.topFileN;
+      for (int i = 0; i < n; ++i) {
+        char churn[24];
+        snprintf(churn, sizeof(churn), "+%d / -%d",
+                 m.topFiles[i].added, m.topFiles[i].removed);
+        c.text(basenameOf(m.topFiles[i].path), 10, y, Font::Label,
+               Align::TopLeft, color::ink);
+        c.text(churn, 310, y, Font::Label, Align::TopRight, color::ink2);
+        y += 18;
+      }
+    } else {
+      c.text("uncommitted changes", 10, y, Font::Label, Align::TopLeft, color::ink);
+    }
+  } else {
+    row("Status", "no local changes");
+
+    if (m.lastCommitHash[0]) {
+      char age[16];
+      snprintf(age, sizeof(age), "%dm", m.lastCommitMins);
+      c.text("Commit", 10, y, Font::Label, Align::TopLeft, color::mute);
+      c.text(age, 310, y, Font::Label, Align::TopRight, color::ink2);
+      y += 18;
+      c.text(m.lastCommitHash, 10, y, Font::Mono, Align::TopLeft, color::ink);
+      if (m.lastCommitMsg[0])
+        c.text(m.lastCommitMsg, 70, y, Font::Label, Align::TopLeft, color::ink2);
+    }
   }
 
   renderPageDots(PageId::Workspace, c);

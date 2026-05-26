@@ -75,6 +75,55 @@ void test_workspace_degrades_when_no_git() {
   TEST_ASSERT_TRUE(c.called("text", "—"));
 }
 
+void test_workspace_dirty_renders_dense_diff() {
+  StatusModel m;
+  m.hasGit = true;
+  strcpy(m.branch, "feat/workspace-page-density");
+  strcpy(m.wsDir, "/Users/houxiaomu/playground/m5toys/.worktrees/workspace-page-density");
+  strcpy(m.wsWorktree, "workspace-page-density");
+  m.staged = 2;
+  m.unstaged = 5;
+  m.untracked = 1;
+  m.hasDiff = true;
+  m.diffFilesChanged = 8;
+  m.diffLinesAdded = 128;
+  m.diffLinesRemoved = 24;
+  m.topFileN = 1;
+  strcpy(m.topFiles[0].path, "firmware/lib/m5render/pages.cpp");
+  m.topFiles[0].added = 84;
+  m.topFiles[0].removed = 12;
+
+  MockCanvas c; renderPage(PageId::Workspace, m, c);
+
+  TEST_ASSERT_TRUE(c.called("text", "dirty"));
+  TEST_ASSERT_TRUE(c.called("text", "Files"));
+  TEST_ASSERT_TRUE(c.called("text", "2 staged   5 modified   1 new"));
+  TEST_ASSERT_TRUE(c.called("text", "Lines"));
+  TEST_ASSERT_TRUE(c.called("text", "+128       -24"));
+  TEST_ASSERT_TRUE(c.called("text", "Top"));
+  TEST_ASSERT_TRUE(c.called("text", "pages.cpp"));
+  TEST_ASSERT_TRUE(c.called("text", "workspace-page-..."));
+  TEST_ASSERT_TRUE(c.called("text", "...orkspace-page-density"));
+}
+
+void test_workspace_clean_renders_status_and_commit() {
+  StatusModel m;
+  m.hasGit = true;
+  strcpy(m.branch, "main");
+  strcpy(m.wsDir, "/Users/houxiaomu/playground/m5toys");
+  strcpy(m.lastCommitHash, "2314b8b");
+  strcpy(m.lastCommitMsg, "densify workspace page");
+  m.lastCommitMins = 12;
+
+  MockCanvas c; renderPage(PageId::Workspace, m, c);
+
+  TEST_ASSERT_TRUE(c.called("text", "clean"));
+  TEST_ASSERT_TRUE(c.called("text", "Status"));
+  TEST_ASSERT_TRUE(c.called("text", "no local changes"));
+  TEST_ASSERT_TRUE(c.called("text", "12m"));
+  TEST_ASSERT_TRUE(c.called("text", "2314b8b"));
+}
+
 void test_header_warning_badge_when_ctx_high() {
   StatusModel m; m.hasContext = true; m.ctxUsedPct = 92;
   MockCanvas c; renderHeader(m, c);
@@ -140,6 +189,8 @@ void setup() {
   RUN_TEST(test_cost_no_sparkline_when_no_history);
   RUN_TEST(test_cost_degrades_when_no_cost);
   RUN_TEST(test_workspace_degrades_when_no_git);
+  RUN_TEST(test_workspace_dirty_renders_dense_diff);
+  RUN_TEST(test_workspace_clean_renders_status_and_commit);
   RUN_TEST(test_header_warning_badge_when_ctx_high);
   RUN_TEST(test_header_badge_working_when_no_warn);
   RUN_TEST(test_cost_rows_degrade_when_no_today_or_weekly);

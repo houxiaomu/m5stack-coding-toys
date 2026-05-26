@@ -26,11 +26,20 @@ struct StatusModel {
   // burnHistory
   int burnN = 0; float burn[16] = {0};
   // workspace
-  char wsDir[64] = ""; char wsWorktree[40] = "";
+  char wsDir[96] = ""; char wsWorktree[40] = "";
   // git
   bool hasGit = false;
   char branch[40] = ""; int ahead = 0, behind = 0, staged = 0, unstaged = 0, untracked = 0;
   char lastCommitHash[10] = ""; char lastCommitMsg[48] = ""; int lastCommitMins = 0;
+  bool hasDiff = false;
+  int diffFilesChanged = 0, diffLinesAdded = 0, diffLinesRemoved = 0;
+  struct TopFile {
+    char path[40] = "";
+    int added = 0;
+    int removed = 0;
+  };
+  int topFileN = 0;
+  TopFile topFiles[3];
   // pr
   bool hasPr = false; int prNumber = 0; char prReview[16] = "";
 };

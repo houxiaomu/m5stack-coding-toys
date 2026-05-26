@@ -54,6 +54,35 @@ void test_state_active_and_idle_map_to_sessionActive() {
   TEST_ASSERT_FALSE(m2.sessionActive);
 }
 
+void test_git_diff_parses_summary_and_clamps_top_files() {
+  const char* j =
+    "{\"state\":\"active\",\"git\":{\"branch\":\"feat/diff\","
+    "\"diff\":{\"filesChanged\":8,\"linesAdded\":120,\"linesRemoved\":45,"
+    "\"topFiles\":["
+    "{\"path\":\"firmware/src/main.cpp\",\"added\":40,\"removed\":5},"
+    "{\"path\":\"lib/m5render/status_model.cpp\",\"added\":30,\"removed\":20},"
+    "{\"path\":\"test/status_model/test_main.cpp\",\"added\":25,\"removed\":10},"
+    "{\"path\":\"daemon/src/status.ts\",\"added\":100,\"removed\":100}"
+    "]}}}";
+  StatusModel m;
+  TEST_ASSERT_TRUE(parseStatusFrame(j, m));
+  TEST_ASSERT_TRUE(m.hasGit);
+  TEST_ASSERT_TRUE(m.hasDiff);
+  TEST_ASSERT_EQUAL(8, m.diffFilesChanged);
+  TEST_ASSERT_EQUAL(120, m.diffLinesAdded);
+  TEST_ASSERT_EQUAL(45, m.diffLinesRemoved);
+  TEST_ASSERT_EQUAL(3, m.topFileN);
+  TEST_ASSERT_EQUAL_STRING("firmware/src/main.cpp", m.topFiles[0].path);
+  TEST_ASSERT_EQUAL(40, m.topFiles[0].added);
+  TEST_ASSERT_EQUAL(5, m.topFiles[0].removed);
+  TEST_ASSERT_EQUAL_STRING("lib/m5render/status_model.cpp", m.topFiles[1].path);
+  TEST_ASSERT_EQUAL(30, m.topFiles[1].added);
+  TEST_ASSERT_EQUAL(20, m.topFiles[1].removed);
+  TEST_ASSERT_EQUAL_STRING("test/status_model/test_main.cpp", m.topFiles[2].path);
+  TEST_ASSERT_EQUAL(25, m.topFiles[2].added);
+  TEST_ASSERT_EQUAL(10, m.topFiles[2].removed);
+}
+
 void setup() {
   UNITY_BEGIN();
   RUN_TEST(test_minimal_frame_sets_sessionActive);
@@ -61,6 +90,7 @@ void setup() {
   RUN_TEST(test_rejects_bad_json);
   RUN_TEST(test_burn_history_keeps_most_recent_16);
   RUN_TEST(test_state_active_and_idle_map_to_sessionActive);
+  RUN_TEST(test_git_diff_parses_summary_and_clamps_top_files);
   UNITY_END();
 }
 void loop() {}

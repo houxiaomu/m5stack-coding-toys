@@ -64,6 +64,14 @@ export class GitEnricher {
       } catch {
         // no commits yet
       }
+
+      try {
+        const unstagedDiff = await this.run(['diff', '--numstat'], dir)
+        const stagedDiff = await this.run(['diff', '--cached', '--numstat'], dir)
+        fields.diff = summarizeDiff([...parseNumstat(unstagedDiff), ...parseNumstat(stagedDiff)])
+      } catch {
+        // diff stats are optional; keep branch/status/commit enrichment
+      }
       value = fields
     } catch (err) {
       log.debug('git enrich skipped', { dir, error: (err as Error).message })
@@ -90,4 +98,51 @@ function parsePorcelain(out: string): { staged: number; unstaged: number; untrac
     if (y !== ' ' && y !== '?') unstaged += 1
   }
   return { staged, unstaged, untracked }
+}
+
+function parseNumstat(out: string): Array<{ path: string; added: number; removed: number }> {
+  const rows: Array<{ path: string; added: number; removed: number }> = []
+  for (const line of out.split('\n')) {
+    if (!line.trim()) continue
+    const [addedRaw, removedRaw, ...pathParts] = line.split('\t')
+    const path = pathParts.join('\t')
+    if (addedRaw === undefined || removedRaw === undefined || !path) continue
+    const added = parseNumstatCount(addedRaw)
+    const removed = parseNumstatCount(removedRaw)
+    if (added === undefined || removed === undefined) continue
+    rows.push({
+      path,
+      added,
+      removed,
+    })
+  }
+  return rows
+}
+
+function parseNumstatCount(value: string): number | undefined {
+  if (value === '-') return 0
+  if (!/^\d+$/.test(value)) return undefined
+  return Number.parseInt(value, 10)
+}
+
+function summarizeDiff(
+  rows: Array<{ path: string; added: number; removed: number }>,
+): GitFields['diff'] {
+  const byPath = new Map<string, { path: string; added: number; removed: number }>()
+  for (const row of rows) {
+    const current = byPath.get(row.path) ?? { path: row.path, added: 0, removed: 0 }
+    current.added += row.added
+    current.removed += row.removed
+    byPath.set(row.path, current)
+  }
+
+  const merged = [...byPath.values()]
+  merged.sort((a, b) => b.added + b.removed - (a.added + a.removed) || a.path.localeCompare(b.path))
+
+  return {
+    filesChanged: merged.length,
+    linesAdded: merged.reduce((sum, row) => sum + row.added, 0),
+    linesRemoved: merged.reduce((sum, row) => sum + row.removed, 0),
+    topFiles: merged.slice(0, 3),
+  }
 }
