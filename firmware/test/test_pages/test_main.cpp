@@ -101,6 +101,7 @@ void test_workspace_dirty_renders_dense_diff() {
   TEST_ASSERT_TRUE(c.called("text", "+128       -24"));
   TEST_ASSERT_TRUE(c.called("text", "Top"));
   TEST_ASSERT_TRUE(c.called("text", "pages.cpp"));
+  TEST_ASSERT_TRUE(c.called("text", "/playground/m5toys"));
 }
 
 void test_workspace_clean_renders_status_and_commit() {

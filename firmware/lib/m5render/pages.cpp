@@ -84,6 +84,25 @@ static const char* basenameOf(const char* path) {
   return slash && slash[1] ? slash + 1 : path;
 }
 
+static const char* tailPath(const char* path, int segments, char* out, size_t cap) {
+  if (!path || !*path) {
+    snprintf(out, cap, "%s", kDash);
+    return out;
+  }
+
+  const char* start = path + std::strlen(path);
+  int seen = 0;
+  while (start > path) {
+    --start;
+    if (*start == '/' && ++seen >= segments) {
+      ++start;
+      break;
+    }
+  }
+  snprintf(out, cap, "/%s", start);
+  return out;
+}
+
 // ── PAGE · Overview ─────────────────────────────────────────────────────────
 static void drawOverview(const StatusModel& m, Canvas& c) {
   M5CT_DBG("ov start");
@@ -232,8 +251,10 @@ static void drawWorkspace(const StatusModel& m, Canvas& c) {
          dirty ? color::warn : color::accent);
   c.text(ab, 310, 58, Font::Label, Align::TopRight, color::mute);
 
+  char pathHint[32];
   c.text(basenameOf(m.wsDir), 10, 64, Font::Label, Align::TopLeft, color::ink2);
-  c.text(m.wsDir[0] ? m.wsDir : kDash, 70, 64, Font::Label, Align::TopLeft, color::mute);
+  c.text(tailPath(m.wsDir, 2, pathHint, sizeof(pathHint)), 310, 64,
+         Font::Label, Align::TopRight, color::mute);
   c.drawHLine(10, 80, 300, color::hairline);
 
   int y = 92;
