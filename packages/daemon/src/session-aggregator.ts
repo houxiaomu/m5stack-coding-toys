@@ -105,6 +105,10 @@ export class SessionAggregator {
   async ingestHookEvent(event: string): Promise<void> {
     const session = this.session()
     if (!session || !session.info) return
+    // A hook alone must not revive an idle session: without a live statusLine
+    // we have no real data, so synthesizing an `active` frame would flip the
+    // device into an empty Live view. Wait for the next tick to go active.
+    if (this.sessionIdle) return
     const next = hookToActivity(event)
     if (!next) return
     this.currentActivity = next

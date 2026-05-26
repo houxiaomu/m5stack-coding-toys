@@ -244,6 +244,21 @@ describe('SessionAggregator', () => {
     await expect(agg.ingestHookEvent('Stop')).resolves.toBeUndefined()
   })
 
+  it('ignores hook events after the session has gone idle (no spurious wake)', async () => {
+    const sess = fakeSession()
+    const dead = () => false
+    const agg = new SessionAggregator(
+      () => sess as never,
+      { enrich: async () => undefined } as never,
+      dead,
+    )
+    await agg.ingest({ model: { display_name: 'X' } }, 4242)
+    agg.checkLiveness() // pid dead → idle frame sent
+    sess.send.mockClear()
+    await agg.ingestHookEvent('Notification')
+    expect(sess.send).not.toHaveBeenCalled()
+  })
+
   it('resets activity to working when the session goes idle', async () => {
     const sess = fakeSession()
     const dead = () => false
