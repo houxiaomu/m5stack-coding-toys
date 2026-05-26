@@ -5,6 +5,10 @@ import { makeLogger } from './logger.js'
 
 const log = makeLogger('hookserver')
 
+function finiteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
 /**
  * Newline-delimited JSON over UNIX domain socket.
  *
@@ -144,6 +148,15 @@ export class HookServer {
         case 'screenshot': {
           const out = typeof msg.out === 'string' ? msg.out : undefined
           const r = await this.control.screenshot(out)
+          sock.end(`${JSON.stringify(r)}\n`)
+          return
+        }
+        case 'tap': {
+          if (!finiteNumber(msg.x) || !finiteNumber(msg.y) || !finiteNumber(msg.duration_ms)) {
+            sock.end(`${JSON.stringify({ error: 'bad_request' })}\n`)
+            return
+          }
+          const r = await this.control.tap(msg.x, msg.y, msg.duration_ms)
           sock.end(`${JSON.stringify(r)}\n`)
           return
         }
