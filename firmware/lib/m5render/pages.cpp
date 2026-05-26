@@ -10,6 +10,30 @@ namespace m5render {
 // Placeholder rendered for any data group whose has* flag is false.
 static const char* kDash = "—";
 
+const char* activityLabel(Activity a) {
+  switch (a) {
+    case Activity::AwaitingInput:  return "YOUR TURN";
+    case Activity::NeedsAttention: return "NEEDS YOU";
+    default:                       return "WORKING";
+  }
+}
+
+uint16_t activityColor(Activity a) {
+  switch (a) {
+    case Activity::AwaitingInput:  return color::accent;
+    case Activity::NeedsAttention: return color::warn;
+    default:                       return color::good;
+  }
+}
+
+uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t t) {
+  auto lerp = [&](int a, int b) { return b + ((a - b) * t) / 255; };
+  int rf = (fg >> 11) & 0x1F, gf = (fg >> 5) & 0x3F, bf = fg & 0x1F;
+  int rb = (bg >> 11) & 0x1F, gb = (bg >> 5) & 0x3F, bb = bg & 0x1F;
+  int r = lerp(rf, rb), g = lerp(gf, gb), b = lerp(bf, bb);
+  return static_cast<uint16_t>((r << 11) | (g << 5) | b);
+}
+
 // ── shared header (top bar across all 4 data pages) ─────────────────────────
 void renderHeader(const StatusModel& m, Canvas& c) {
   M5CT_DBG("hdr start");

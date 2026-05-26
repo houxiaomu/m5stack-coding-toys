@@ -124,6 +124,25 @@ void test_workspace_clean_renders_status_and_commit() {
   TEST_ASSERT_TRUE(c.called("text", "2314b8b"));
 }
 
+void test_activity_label_maps_each_state() {
+  TEST_ASSERT_EQUAL_STRING("WORKING", activityLabel(Activity::Working));
+  TEST_ASSERT_EQUAL_STRING("YOUR TURN", activityLabel(Activity::AwaitingInput));
+  TEST_ASSERT_EQUAL_STRING("NEEDS YOU", activityLabel(Activity::NeedsAttention));
+}
+
+void test_activity_color_maps_each_state() {
+  TEST_ASSERT_EQUAL_UINT16(color::good, activityColor(Activity::Working));
+  TEST_ASSERT_EQUAL_UINT16(color::accent, activityColor(Activity::AwaitingInput));
+  TEST_ASSERT_EQUAL_UINT16(color::warn, activityColor(Activity::NeedsAttention));
+}
+
+void test_blend565_endpoints_and_midpoint() {
+  TEST_ASSERT_EQUAL_UINT16(0xF800, blend565(0xF800, 0x0000, 255)); // t=255 -> fg
+  TEST_ASSERT_EQUAL_UINT16(0x0000, blend565(0xF800, 0x0000, 0));   // t=0   -> bg
+  // midpoint: red(31,0,0) blended halfway toward black ~ (15,0,0)
+  TEST_ASSERT_EQUAL_UINT16(0x7800, blend565(0xF800, 0x0000, 128));
+}
+
 void test_header_warning_badge_when_ctx_high() {
   StatusModel m; m.hasContext = true; m.ctxUsedPct = 92;
   MockCanvas c; renderHeader(m, c);
@@ -191,6 +210,9 @@ void setup() {
   RUN_TEST(test_workspace_degrades_when_no_git);
   RUN_TEST(test_workspace_dirty_renders_dense_diff);
   RUN_TEST(test_workspace_clean_renders_status_and_commit);
+  RUN_TEST(test_activity_label_maps_each_state);
+  RUN_TEST(test_activity_color_maps_each_state);
+  RUN_TEST(test_blend565_endpoints_and_midpoint);
   RUN_TEST(test_header_warning_badge_when_ctx_high);
   RUN_TEST(test_header_badge_working_when_no_warn);
   RUN_TEST(test_cost_rows_degrade_when_no_today_or_weekly);
