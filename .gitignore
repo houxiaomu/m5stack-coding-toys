@@ -31,5 +31,5 @@ coverage/
 .worktrees/
 .claude/worktrees/
 
-# Docs (specs/plans, kept local only)
-docs/
+# Docs: specs/plans kept local only; everything else under docs/ is committed
+docs/superpowers/
