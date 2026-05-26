@@ -210,7 +210,9 @@ describe('SessionAggregator', () => {
 
   it('stamps current activity on status frames (defaults to working)', async () => {
     const sess = fakeSession()
-    const agg = new SessionAggregator(() => sess as never, { enrich: async () => undefined } as never)
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
     await agg.ingest({ model: { display_name: 'Sonnet 4.6' } })
     const frame = sess.send.mock.calls.at(-1)[0]
     expect(frame.p.activity).toBe('working')
@@ -218,12 +220,14 @@ describe('SessionAggregator', () => {
 
   it('maps hook events to activity and re-pushes the last frame', async () => {
     const sess = fakeSession()
-    const agg = new SessionAggregator(() => sess as never, { enrich: async () => undefined } as never)
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
     await agg.ingest({ model: { display_name: 'Sonnet 4.6' } })
     sess.send.mockClear()
 
     await agg.ingestHookEvent('Stop')
-    let frame = sess.send.mock.calls.at(-1)[0]
+    const frame = sess.send.mock.calls.at(-1)[0]
     expect(frame.p.activity).toBe('awaiting_input')
     // re-pushed full frame keeps prior data (model), not a blank frame
     expect(frame.p.model.short).toBe('Sonnet 4.6')
@@ -243,7 +247,11 @@ describe('SessionAggregator', () => {
   it('resets activity to working when the session goes idle', async () => {
     const sess = fakeSession()
     const dead = () => false
-    const agg = new SessionAggregator(() => sess as never, { enrich: async () => undefined } as never, dead)
+    const agg = new SessionAggregator(
+      () => sess as never,
+      { enrich: async () => undefined } as never,
+      dead,
+    )
     await agg.ingest({ model: { display_name: 'X' } }, 4242)
     await agg.ingestHookEvent('Notification')
     agg.checkLiveness()

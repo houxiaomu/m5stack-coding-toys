@@ -162,7 +162,9 @@ describe('hooks patch', () => {
 
   it('uninstall drops an event key left empty', () => {
     const before = {
-      Notification: [{ hooks: [{ type: 'command', command: 'm5ct-statusline --event Notification' }] }],
+      Notification: [
+        { hooks: [{ type: 'command', command: 'm5ct-statusline --event Notification' }] },
+      ],
     }
     const after = computeHooksUninstall(before, 'm5ct-statusline') as Record<string, unknown>
     expect(after.Notification).toBeUndefined()

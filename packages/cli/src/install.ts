@@ -49,9 +49,7 @@ export function computeInstallPatch(
   }
 
   const existingHooks =
-    after.hooks && typeof after.hooks === 'object'
-      ? (after.hooks as Record<string, unknown>)
-      : {}
+    after.hooks && typeof after.hooks === 'object' ? (after.hooks as Record<string, unknown>) : {}
   for (const event of HOOK_EVENTS) {
     const cmd = `${statusLineBin} --event ${event}`
     const groups = Array.isArray(existingHooks[event])
@@ -85,7 +83,9 @@ export function computeHooksPatch(
   const after: Record<string, unknown> = { ...before }
   for (const event of HOOK_EVENTS) {
     const cmd = hookCommand(bin, event)
-    const groups = (Array.isArray(after[event]) ? [...(after[event] as HookGroup[])] : []) as HookGroup[]
+    const groups = (
+      Array.isArray(after[event]) ? [...(after[event] as HookGroup[])] : []
+    ) as HookGroup[]
     const already = groups.some((g) => g.hooks?.some((h) => h.command === cmd))
     if (!already) groups.push({ hooks: [{ type: 'command', command: cmd }] })
     after[event] = groups
@@ -130,7 +130,10 @@ export function computeUninstall(home: string = homedir(), chained?: string): Un
     after.statusLine = undefined
   }
   if (after.hooks && typeof after.hooks === 'object') {
-    const stripped = computeHooksUninstall(after.hooks as Record<string, unknown>, 'm5ct-statusline')
+    const stripped = computeHooksUninstall(
+      after.hooks as Record<string, unknown>,
+      'm5ct-statusline',
+    )
     after.hooks = Object.keys(stripped).length > 0 ? stripped : undefined
   }
   return { path, before, after }
