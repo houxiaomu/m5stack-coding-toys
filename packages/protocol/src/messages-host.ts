@@ -87,8 +87,17 @@ export const screenshotPayload = z.object({
   fmt: z.literal('png').default('png'),
 })
 
+export const tapPayload = z
+  .object({
+    x: z.number().int().nonnegative(),
+    y: z.number().int().nonnegative(),
+    duration_ms: z.number().int().min(1).max(5000).default(50),
+  })
+  .strict()
+
 export type HelloPayload = z.infer<typeof helloPayload>
 export type NotifyPayload = z.infer<typeof notifyPayload>
 export type PingPayload = z.infer<typeof pingPayload>
 export type StatusPayload = z.infer<typeof statusPayload>
 export type ScreenshotPayload = z.infer<typeof screenshotPayload>
+export type TapPayload = z.infer<typeof tapPayload>

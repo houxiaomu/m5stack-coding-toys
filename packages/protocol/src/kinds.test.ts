@@ -2,17 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { ALL_KINDS, CAPS, DEVICE_KINDS, HOST_KINDS, STATES, URGENCY } from './kinds.js'
 
 describe('kinds', () => {
-  it('host kinds are status-display + screenshot', () => {
-    expect(HOST_KINDS).toEqual(['hello', 'status', 'notify', 'ping', 'screenshot'])
+  it('host kinds are status-display + screenshot + tap', () => {
+    expect(HOST_KINDS).toEqual(['hello', 'status', 'notify', 'ping', 'screenshot', 'tap'])
   })
 
-  it('device kinds drop approval/prompt, add screenshot.ack', () => {
+  it('device kinds drop approval/prompt, add screenshot.ack and tap.ack', () => {
     expect(DEVICE_KINDS).toEqual([
       'hello.ack',
       'notify.ack',
       'device.event',
       'pong',
       'screenshot.ack',
+      'tap.ack',
     ])
   })
 

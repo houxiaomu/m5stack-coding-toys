@@ -1,4 +1,4 @@
-export const HOST_KINDS = ['hello', 'status', 'notify', 'ping', 'screenshot'] as const
+export const HOST_KINDS = ['hello', 'status', 'notify', 'ping', 'screenshot', 'tap'] as const
 
 export const DEVICE_KINDS = [
   'hello.ack',
@@ -6,6 +6,7 @@ export const DEVICE_KINDS = [
   'device.event',
   'pong',
   'screenshot.ack',
+  'tap.ack',
 ] as const
 
 export const ALL_KINDS = [...HOST_KINDS, ...DEVICE_KINDS] as const
