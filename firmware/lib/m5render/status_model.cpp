@@ -65,6 +65,23 @@ bool parseStatusFrame(JsonObjectConst doc, StatusModel& m) {
     copyStr(m.lastCommitHash, sizeof(m.lastCommitHash), doc["git"]["lastCommit"]["hash"] | "");
     copyStr(m.lastCommitMsg, sizeof(m.lastCommitMsg), doc["git"]["lastCommit"]["msg"] | "");
     m.lastCommitMins = doc["git"]["lastCommit"]["minsAgo"] | 0;
+    if (doc["git"]["diff"].is<JsonObjectConst>()) {
+      JsonObjectConst diff = doc["git"]["diff"].as<JsonObjectConst>();
+      m.hasDiff = true;
+      m.diffFilesChanged = diff["filesChanged"] | 0;
+      m.diffLinesAdded = diff["linesAdded"] | 0;
+      m.diffLinesRemoved = diff["linesRemoved"] | 0;
+      if (diff["topFiles"].is<JsonArrayConst>()) {
+        m.topFileN = 0;
+        for (JsonObjectConst file : diff["topFiles"].as<JsonArrayConst>()) {
+          if (m.topFileN >= 3) break;
+          StatusModel::TopFile& topFile = m.topFiles[m.topFileN++];
+          copyStr(topFile.path, sizeof(topFile.path), file["path"] | "");
+          topFile.added = file["added"] | 0;
+          topFile.removed = file["removed"] | 0;
+        }
+      }
+    }
   }
   if (doc["pr"].is<JsonObjectConst>()) {
     m.hasPr = true;
