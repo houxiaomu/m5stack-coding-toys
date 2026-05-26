@@ -207,4 +207,48 @@ describe('SessionAggregator', () => {
     agg.checkLiveness(() => 1000 + 11 * 60_000)
     expect(sess.send.mock.calls.at(-1)[0].p.state).toBe('idle')
   })
+
+  it('stamps current activity on status frames (defaults to working)', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, { enrich: async () => undefined } as never)
+    await agg.ingest({ model: { display_name: 'Sonnet 4.6' } })
+    const frame = sess.send.mock.calls.at(-1)[0]
+    expect(frame.p.activity).toBe('working')
+  })
+
+  it('maps hook events to activity and re-pushes the last frame', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, { enrich: async () => undefined } as never)
+    await agg.ingest({ model: { display_name: 'Sonnet 4.6' } })
+    sess.send.mockClear()
+
+    await agg.ingestHookEvent('Stop')
+    let frame = sess.send.mock.calls.at(-1)[0]
+    expect(frame.p.activity).toBe('awaiting_input')
+    // re-pushed full frame keeps prior data (model), not a blank frame
+    expect(frame.p.model.short).toBe('Sonnet 4.6')
+
+    await agg.ingestHookEvent('Notification')
+    expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('needs_attention')
+
+    await agg.ingestHookEvent('UserPromptSubmit')
+    expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('working')
+  })
+
+  it('ignores hook events when no device session', async () => {
+    const agg = new SessionAggregator(() => null, { enrich: async () => undefined } as never)
+    await expect(agg.ingestHookEvent('Stop')).resolves.toBeUndefined()
+  })
+
+  it('resets activity to working when the session goes idle', async () => {
+    const sess = fakeSession()
+    const dead = () => false
+    const agg = new SessionAggregator(() => sess as never, { enrich: async () => undefined } as never, dead)
+    await agg.ingest({ model: { display_name: 'X' } }, 4242)
+    await agg.ingestHookEvent('Notification')
+    agg.checkLiveness()
+    sess.send.mockClear()
+    await agg.ingest({ model: { display_name: 'X' } }, 4242)
+    expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('working')
+  })
 })

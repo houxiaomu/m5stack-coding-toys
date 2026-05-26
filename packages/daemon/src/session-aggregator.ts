@@ -1,4 +1,4 @@
-import type { StatusPayload } from '@m5stack-coding-toys/protocol'
+import type { Activity, StatusPayload } from '@m5stack-coding-toys/protocol'
 import type { AggregatorStore } from './aggregator-store.js'
 import { type StatusLineInput, mapStatusLineInput } from './cc-statusline.js'
 import type { DeviceSession } from './device-session.js'
@@ -38,6 +38,8 @@ export class SessionAggregator {
   private ccPid: number | undefined
   private lastActivityMs = 0
   private sessionIdle = true // start idle; first tick flips to active
+  private currentActivity: Activity = 'working'
+  private lastFrame: StatusPayload | null = null
 
   constructor(
     private readonly session: () => DeviceSession | null,
@@ -74,6 +76,7 @@ export class SessionAggregator {
     const frame: StatusPayload = {
       ...base,
       state: 'active',
+      activity: this.currentActivity,
       ...(git ? { git } : {}),
       ...(this.burnHistory.length > 0 ? { burnHistory: [...this.burnHistory] } : {}),
       today: { costUsd: round2(this.todayCost), sessions: this.todaySessions.size },
@@ -90,8 +93,27 @@ export class SessionAggregator {
         : {}),
     }
 
+    this.lastFrame = frame
     await session.send({ k: 'status', p: frame }).catch((err) => {
       log.error('status send failed', { error: (err as Error).message })
+    })
+  }
+
+  /** A Claude Code hook fired. Update activity and immediately re-push so the
+   *  badge reflects it without waiting for the next statusLine tick. Re-sends
+   *  the last full frame (data preserved) with the new activity stamped. */
+  async ingestHookEvent(event: string): Promise<void> {
+    const session = this.session()
+    if (!session || !session.info) return
+    const next = hookToActivity(event)
+    if (!next) return
+    this.currentActivity = next
+    const frame: StatusPayload = this.lastFrame
+      ? { ...this.lastFrame, activity: next }
+      : { state: 'active', activity: next }
+    this.lastFrame = frame
+    await session.send({ k: 'status', p: frame }).catch((err) => {
+      log.error('activity send failed', { error: (err as Error).message })
     })
   }
 
@@ -110,6 +132,8 @@ export class SessionAggregator {
     if (!ended) return
 
     this.sessionIdle = true
+    this.currentActivity = 'working'
+    this.lastFrame = null
     this.ccPid = undefined
     log.info('session ended → idle')
     void session.send({ k: 'status', p: { state: 'idle' } }).catch((err) => {
@@ -159,6 +183,19 @@ export class SessionAggregator {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
+}
+
+function hookToActivity(event: string): Activity | null {
+  switch (event) {
+    case 'UserPromptSubmit':
+      return 'working'
+    case 'Stop':
+      return 'awaiting_input'
+    case 'Notification':
+      return 'needs_attention'
+    default:
+      return null
+  }
 }
 
 /** Local-day key (NOT UTC) so the `today` bucket resets at local midnight. */
