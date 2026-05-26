@@ -47,15 +47,13 @@ void renderHeader(const StatusModel& m, Canvas& c) {
   const char* model = m.modelShort[0] ? m.modelShort : "Claude";
   c.text(model, 26, 17, Font::Title, Align::MiddleLeft, color::ink);
 
-  // State badge top-right. Warning takes precedence (ctx>=80 or exceeds200k).
-  bool ctxWarn = m.hasContext && (m.exceeds200k || m.ctxUsedPct >= 80);
-  const char* badge = "WORKING";
-  uint16_t bColor = color::accent, bBg = color::accSoft;
-  if (ctxWarn) { badge = "CTX HIGH"; bColor = color::warn; bBg = color::accSoft; }
-
+  // Activity badge top-right. Color + label come from m.activity; brightness is
+  // the app's animation phase (255 = full color). Context warning is NOT shown
+  // here — the data-page context tiles already render warn color over threshold.
+  const char* badge = activityLabel(m.activity);
+  uint16_t bColor = blend565(activityColor(m.activity), color::bg, m.badgeBrightness);
   int bw = c.measureText(badge, Font::Label) + 8;
-  M5CT_DBG("hdr measureText bw=%d", bw);
-  c.fillRoundRect(316 - bw, 9, bw, 16, 3, bBg);
+  c.fillRoundRect(316 - bw, 9, bw, 16, 3, color::accSoft);
   c.text(badge, 316 - bw / 2, 17, Font::Label, Align::MiddleCenter, bColor);
 
   // Hairline under header.

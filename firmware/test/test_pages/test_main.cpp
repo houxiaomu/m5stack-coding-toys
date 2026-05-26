@@ -143,16 +143,28 @@ void test_blend565_endpoints_and_midpoint() {
   TEST_ASSERT_EQUAL_UINT16(0x7800, blend565(0xF800, 0x0000, 128));
 }
 
-void test_header_warning_badge_when_ctx_high() {
-  StatusModel m; m.hasContext = true; m.ctxUsedPct = 92;
-  MockCanvas c; renderHeader(m, c);
-  TEST_ASSERT_TRUE(c.called("text", "CTX HIGH"));
-}
-
-void test_header_badge_working_when_no_warn() {
-  StatusModel m; m.hasContext = true; m.ctxUsedPct = 10;
+void test_header_badge_shows_working_by_default() {
+  StatusModel m;  // default activity = Working
   MockCanvas c; renderHeader(m, c);
   TEST_ASSERT_TRUE(c.called("text", "WORKING"));
+}
+
+void test_header_badge_shows_your_turn_when_awaiting() {
+  StatusModel m; m.activity = Activity::AwaitingInput;
+  MockCanvas c; renderHeader(m, c);
+  TEST_ASSERT_TRUE(c.called("text", "YOUR TURN"));
+  TEST_ASSERT_FALSE(c.called("text", "WORKING"));
+}
+
+void test_header_badge_shows_needs_you_when_attention() {
+  StatusModel m; m.activity = Activity::NeedsAttention;
+  MockCanvas c; renderHeader(m, c);
+  TEST_ASSERT_TRUE(c.called("text", "NEEDS YOU"));
+}
+
+void test_header_badge_never_shows_ctx_high() {
+  StatusModel m; m.hasContext = true; m.ctxUsedPct = 95; m.exceeds200k = true;
+  MockCanvas c; renderHeader(m, c);
   TEST_ASSERT_FALSE(c.called("text", "CTX HIGH"));
 }
 
@@ -213,8 +225,10 @@ void setup() {
   RUN_TEST(test_activity_label_maps_each_state);
   RUN_TEST(test_activity_color_maps_each_state);
   RUN_TEST(test_blend565_endpoints_and_midpoint);
-  RUN_TEST(test_header_warning_badge_when_ctx_high);
-  RUN_TEST(test_header_badge_working_when_no_warn);
+  RUN_TEST(test_header_badge_shows_working_by_default);
+  RUN_TEST(test_header_badge_shows_your_turn_when_awaiting);
+  RUN_TEST(test_header_badge_shows_needs_you_when_attention);
+  RUN_TEST(test_header_badge_never_shows_ctx_high);
   RUN_TEST(test_cost_rows_degrade_when_no_today_or_weekly);
   RUN_TEST(test_header_status_dot_drawn);
   RUN_TEST(test_page_dots_draws_four);
