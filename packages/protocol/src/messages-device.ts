@@ -42,8 +42,16 @@ export const screenshotAckPayload = z.object({
   err: z.string().optional(),
 })
 
+export const tapAckPayload = z
+  .object({
+    ok: z.boolean(),
+    err: z.string().optional(),
+  })
+  .strict()
+
 export type HelloAckPayload = z.infer<typeof helloAckPayload>
 export type NotifyAckPayload = z.infer<typeof notifyAckPayload>
 export type DeviceEventPayload = z.infer<typeof deviceEventPayload>
 export type PongPayload = z.infer<typeof pongPayload>
 export type ScreenshotAckPayload = z.infer<typeof screenshotAckPayload>
+export type TapAckPayload = z.infer<typeof tapAckPayload>

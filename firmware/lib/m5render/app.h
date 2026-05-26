@@ -20,6 +20,7 @@ class App {
 public:
     enum class LinkState : uint8_t { NoLink, Linked, Live };
     LinkState link() const { return link_; }
+    PageId page() const { return page_; }       // test helper
     void setNowFn(uint32_t (*fn)()) { now_ = fn; }  // test seam
 
     App(Canvas& canvas, m5hal::Board* board);
@@ -34,6 +35,7 @@ private:
     void render();
     void refreshDeviceInfo();  // RTC / battery / fw / board into DeviceInfo
     void pollInput();
+    void handleTouchTapAction(uint32_t t_ms);
     void checkLink();          // link silence → NoLink
     void send(const char* line, std::size_t len);
     uint32_t now() const { return now_ ? now_() : 0; }

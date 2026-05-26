@@ -143,6 +143,31 @@ void App::handleLine(const char* line, std::size_t len) {
         return;
     }
 
+    if (std::strcmp(env.kind, m5proto::kind::tap) == 0) {
+        JsonObjectConst p = env.doc["p"].as<JsonObjectConst>();
+        if (!p["x"].is<int>() || !p["y"].is<int>() || !p["duration_ms"].is<int>()) {
+            std::string line = m5proto::encode_tap_ack(env.id, 0, false, "bad_request");
+            send(line.c_str(), line.size());
+            return;
+        }
+        int x = p["x"].as<int>();
+        int y = p["y"].as<int>();
+        if (!board_ || !board_->display || !board_->input || !board_->input->hasTouch()) {
+            std::string line = m5proto::encode_tap_ack(env.id, 0, false, "touch_unsupported");
+            send(line.c_str(), line.size());
+            return;
+        }
+        if (x < 0 || y < 0 || x >= board_->display->width() || y >= board_->display->height()) {
+            std::string line = m5proto::encode_tap_ack(env.id, 0, false, "out_of_bounds");
+            send(line.c_str(), line.size());
+            return;
+        }
+        handleTouchTapAction(now());
+        std::string line = m5proto::encode_tap_ack(env.id, 0, true, nullptr);
+        send(line.c_str(), line.size());
+        return;
+    }
+
     if (std::strcmp(env.kind, m5proto::kind::status) == 0) {
         bool wasLive = (link_ == LinkState::Live);
         bool ok = parseStatusFrame(env.doc["p"].as<JsonObjectConst>(), model_);
@@ -166,6 +191,10 @@ void App::pollInput() {
     m5hal::InputEvent e{};
     if (!board_->input->poll(e)) return;
     if (e.kind != m5hal::InputEvent::TouchTap) return;
+    handleTouchTapAction(e.t_ms);
+}
+
+void App::handleTouchTapAction(uint32_t) {
     if (link_ != LinkState::Live) return;  // paging only on status pages
     page_ = static_cast<PageId>((static_cast<int>(page_) + 1) % kPageCount);
     dirty_ = true;

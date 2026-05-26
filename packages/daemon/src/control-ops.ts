@@ -24,6 +24,7 @@ export interface ControlHandler {
   flashHold(clientId: string): Promise<unknown>
   flashRelease(clientId: string): Promise<unknown>
   screenshot(out?: string): Promise<{ ok: true; path: string } | { error: string }>
+  tap(x: number, y: number, durationMs: number): Promise<{ ok: true } | { error: string }>
 }
 
 export function makeControlHandler(dm: DeviceManager): ControlHandler {
@@ -87,6 +88,20 @@ export function makeControlHandler(dm: DeviceManager): ControlHandler {
       await mkdir(dirname(path), { recursive: true })
       await writeFile(path, png)
       return { ok: true as const, path }
+    },
+    async tap(x: number, y: number, durationMs: number): Promise<{ ok: true } | { error: string }> {
+      const sess = dm.currentSession()
+      if (!sess) return { error: 'no_device' }
+      let env: Awaited<ReturnType<typeof sess.request>>
+      try {
+        env = await sess.request({ k: 'tap', p: { x, y, duration_ms: durationMs } }, 3000)
+      } catch (err) {
+        const e = err as Error & { code?: string }
+        return { error: e.code === 'ETIMEDOUT' ? 'device_timeout' : e.message }
+      }
+      const p = env.p as { ok?: boolean; err?: string }
+      if (p.ok) return { ok: true as const }
+      return { error: p.err ?? 'tap_failed' }
     },
   }
 }

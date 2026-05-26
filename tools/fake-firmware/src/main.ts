@@ -75,6 +75,10 @@ function handle(board: Board, raw: string): void {
     )
     return
   }
+  if (env.k === 'tap') {
+    send(encode({ k: 'tap.ack', ...(env.id ? { id: env.id } : {}), p: { ok: true } }))
+    return
+  }
   if (env.k === 'status') {
     // Fire-and-forget; log to stderr so tests can scrape the pushed frame.
     process.stderr.write(`[fake-firmware] status ${JSON.stringify(env.p)}\n`)

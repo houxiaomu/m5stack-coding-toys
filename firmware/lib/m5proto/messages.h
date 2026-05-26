@@ -12,6 +12,7 @@ namespace m5proto {
     constexpr const char* notify = "notify";
     constexpr const char* ping = "ping";
     constexpr const char* screenshot = "screenshot";
+    constexpr const char* tap = "tap";
 
     // device -> host
     constexpr const char* hello_ack = "hello.ack";
@@ -19,6 +20,7 @@ namespace m5proto {
     constexpr const char* device_event = "device.event";
     constexpr const char* pong = "pong";
     constexpr const char* screenshot_ack = "screenshot.ack";
+    constexpr const char* tap_ack = "tap.ack";
   }
 
   namespace state {

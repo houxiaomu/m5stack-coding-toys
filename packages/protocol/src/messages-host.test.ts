@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { helloPayload, notifyPayload, pingPayload, statusPayload } from './messages-host.js'
+import {
+  helloPayload,
+  notifyPayload,
+  pingPayload,
+  statusPayload,
+  tapPayload,
+} from './messages-host.js'
 
 describe('statusPayload', () => {
   it('requires only state; all other fields optional', () => {
@@ -108,5 +114,31 @@ describe('statusPayload activity', () => {
   it('activity is optional and coexists with state', () => {
     const r = statusPayload.safeParse({ state: 'idle' })
     expect(r.success).toBe(true)
+  })
+})
+
+describe('tapPayload', () => {
+  it('accepts coordinates and defaults duration', () => {
+    expect(tapPayload.parse({ x: 160, y: 120 })).toEqual({
+      x: 160,
+      y: 120,
+      duration_ms: 50,
+    })
+  })
+
+  it('accepts an explicit duration', () => {
+    expect(tapPayload.parse({ x: 1, y: 2, duration_ms: 120 })).toEqual({
+      x: 1,
+      y: 2,
+      duration_ms: 120,
+    })
+  })
+
+  it('rejects invalid coordinates and durations', () => {
+    expect(tapPayload.safeParse({ x: -1, y: 0 }).success).toBe(false)
+    expect(tapPayload.safeParse({ x: 1.5, y: 0 }).success).toBe(false)
+    expect(tapPayload.safeParse({ x: 0, y: -1 }).success).toBe(false)
+    expect(tapPayload.safeParse({ x: 0, y: 0, duration_ms: 0 }).success).toBe(false)
+    expect(tapPayload.safeParse({ x: 0, y: 0, duration_ms: 5001 }).success).toBe(false)
   })
 })

@@ -63,6 +63,10 @@ describe('control ops over socket', () => {
     currentSession() {
       return {
         info: { board: 'X', fw: '0.1.0', caps: ['display'], device_id: 'd' },
+        request: async (msg: { k: string }) => {
+          if (msg.k === 'tap') return { k: 'tap.ack', p: { ok: true } }
+          throw new Error(`unexpected request: ${msg.k}`)
+        },
       }
     },
     async flashHold(_c: string) {
@@ -111,6 +115,16 @@ describe('control ops over socket', () => {
     const out = await rpc(sock, { op: 'wat' })
     const r = JSON.parse(out) as { error: string }
     expect(r.error).toMatch(/unknown_op/)
+  })
+
+  it('tap round trip', async () => {
+    const out = await rpc(sock, { op: 'tap', x: 1, y: 2, duration_ms: 50 })
+    expect(JSON.parse(out)).toEqual({ ok: true })
+  })
+
+  it('tap rejects malformed request fields', async () => {
+    const out = await rpc(sock, { op: 'tap', x: '1', y: 2, duration_ms: 50 })
+    expect(JSON.parse(out)).toEqual({ error: 'bad_request' })
   })
 
   it('subscribe-state streams state events', async () => {
@@ -180,5 +194,40 @@ describe('screenshot control op', () => {
     }
     const h = makeControlHandler(dmWith(session))
     expect(await h.screenshot('/tmp/x.png')).toEqual({ error: 'capture_unsupported' })
+  })
+})
+
+describe('tap control op', () => {
+  it('errors when no device is connected', async () => {
+    const h = makeControlHandler(dmWith(null))
+    expect(await h.tap(1, 2, 50)).toEqual({ error: 'no_device' })
+  })
+
+  it('returns ok when the device acknowledges the tap', async () => {
+    const session = {
+      request: async () => ({ k: 'tap.ack', p: { ok: true } }),
+    }
+    const h = makeControlHandler(dmWith(session))
+    expect(await h.tap(1, 2, 50)).toEqual({ ok: true })
+  })
+
+  it('maps a timeout to device_timeout', async () => {
+    const session = {
+      request: async () => {
+        const e = new Error('timed out') as Error & { code?: string }
+        e.code = 'ETIMEDOUT'
+        throw e
+      },
+    }
+    const h = makeControlHandler(dmWith(session))
+    expect(await h.tap(1, 2, 50)).toEqual({ error: 'device_timeout' })
+  })
+
+  it('surfaces a device tap rejection', async () => {
+    const session = {
+      request: async () => ({ k: 'tap.ack', p: { ok: false, err: 'out_of_bounds' } }),
+    }
+    const h = makeControlHandler(dmWith(session))
+    expect(await h.tap(999, 999, 50)).toEqual({ error: 'out_of_bounds' })
   })
 })

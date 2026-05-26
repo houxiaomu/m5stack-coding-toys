@@ -4,6 +4,7 @@ import {
   helloAckPayload,
   notifyAckPayload,
   pongPayload,
+  tapAckPayload,
 } from './messages-device.js'
 
 describe('device payloads', () => {
@@ -40,5 +41,16 @@ describe('device payloads', () => {
 
   it('pong accepts empty payload', () => {
     expect(pongPayload.parse({})).toEqual({})
+  })
+})
+
+describe('tapAckPayload', () => {
+  it('accepts success and expected failure payloads', () => {
+    expect(tapAckPayload.safeParse({ ok: true }).success).toBe(true)
+    expect(tapAckPayload.safeParse({ ok: false, err: 'out_of_bounds' }).success).toBe(true)
+  })
+
+  it('rejects non-boolean ok', () => {
+    expect(tapAckPayload.safeParse({ ok: 'true' }).success).toBe(false)
   })
 })
