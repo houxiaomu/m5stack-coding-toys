@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { CAPS, STATES, URGENCY } from './kinds.js'
+import { ACTIVITY, CAPS, STATES, URGENCY } from './kinds.js'
 
 const capsSchema = z.array(z.enum(CAPS))
 const pct = z.number().min(0).max(100)
@@ -24,6 +24,7 @@ export const pingPayload = z.object({}).strict()
 // users have no rate_limits; current_usage is null before first API call).
 export const statusPayload = z.object({
   state: z.enum(STATES),
+  activity: z.enum(ACTIVITY).optional(),
   model: z.object({ id: z.string(), short: z.string() }).partial().optional(),
   context: z
     .object({

@@ -93,3 +93,20 @@ describe('retained host messages', () => {
     expect(pingPayload.safeParse({}).success).toBe(true)
   })
 })
+
+describe('statusPayload activity', () => {
+  it('accepts the three activity values', () => {
+    for (const activity of ['working', 'awaiting_input', 'needs_attention'] as const) {
+      expect(statusPayload.safeParse({ state: 'active', activity }).success).toBe(true)
+    }
+  })
+
+  it('rejects an unknown activity', () => {
+    expect(statusPayload.safeParse({ state: 'active', activity: 'busy' }).success).toBe(false)
+  })
+
+  it('activity is optional and coexists with state', () => {
+    const r = statusPayload.safeParse({ state: 'idle' })
+    expect(r.success).toBe(true)
+  })
+})
