@@ -35,8 +35,11 @@ function parseArgs(args: readonly string[]): { x: number; y: number; durationMs:
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
+    if (!a) continue
     if (a === '--duration') {
-      durationMs = parseDuration(args[++i])
+      if (i + 1 >= args.length) throw new Error('missing value after --duration')
+      durationMs = parseDuration(args[i + 1])
+      i++
       continue
     }
     if (a.startsWith('-')) throw new Error(`unknown option: ${a}`)
