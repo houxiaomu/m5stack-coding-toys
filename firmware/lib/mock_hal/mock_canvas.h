@@ -43,11 +43,16 @@ public:
     return n * 6;
   }
 
-  // Canned 4-byte capture so test_app can assert the screenshot path without
-  // a real framebuffer. base64("\x89PNG") == "iVBORw==".
-  bool capturePng(std::vector<uint8_t>& out) override {
-    calls.push_back("capturePng");
-    out = {0x89, 'P', 'N', 'G'};
+  // Canned 2×2 RGB565 frame (8 bytes) so test_app can assert the capture path.
+  // base64("\x12\x34\x56\x78\x9a\xbc\xde\xf0") == "EjRWeJq83vA=".
+  bool rawFrame(const uint8_t** data, std::size_t* len, int* w, int* h, const char** fmt) override {
+    static const uint8_t buf[8] = {0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0};
+    calls.push_back("rawFrame");
+    *data = buf;
+    *len = sizeof(buf);
+    *w = 2;
+    *h = 2;
+    *fmt = "rgb565";
     return true;
   }
 

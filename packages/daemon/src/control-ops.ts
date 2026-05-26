@@ -3,6 +3,7 @@ import type { Socket } from 'node:net'
 import { dirname, resolve } from 'node:path'
 import type { DeviceManager, DriftEvent, ManagerState } from './device-manager.js'
 import { makeLogger } from './logger.js'
+import { rgb565ToPng } from './png.js'
 import { screenshotFilename, screenshotsDir } from './state-dir.js'
 import { type RuntimeInfo, runtimeInfo } from './version.js'
 
@@ -70,11 +71,21 @@ export function makeControlHandler(dm: DeviceManager): ControlHandler {
         const e = err as Error & { code?: string }
         return { error: e.code === 'ETIMEDOUT' ? 'device_timeout' : e.message }
       }
-      const p = env.p as { ok: boolean; png_b64?: string; err?: string }
-      if (!p.ok || !p.png_b64) return { error: p.err ?? 'capture_failed' }
+      const p = env.p as {
+        ok: boolean
+        w?: number
+        h?: number
+        fmt?: string
+        data_b64?: string
+        err?: string
+      }
+      if (!p.ok || !p.data_b64 || !p.w || !p.h) return { error: p.err ?? 'capture_failed' }
+      if (p.fmt !== 'rgb565') return { error: `unsupported_format: ${p.fmt}` }
+      // Device sends the raw framebuffer; encode the PNG host-side.
+      const png = rgb565ToPng(Buffer.from(p.data_b64, 'base64'), p.w, p.h)
       const path = out ?? resolve(screenshotsDir(), screenshotFilename())
       await mkdir(dirname(path), { recursive: true })
-      await writeFile(path, Buffer.from(p.png_b64, 'base64'))
+      await writeFile(path, png)
       return { ok: true as const, path }
     },
   }

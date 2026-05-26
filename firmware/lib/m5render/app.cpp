@@ -103,15 +103,30 @@ void App::handleLine(const char* line, std::size_t len) {
     }
 
     if (std::strcmp(env.kind, m5proto::kind::screenshot) == 0) {
-        std::vector<uint8_t> png;
-        if (canvas_.capturePng(png) && !png.empty()) {
-            std::string b64 = m5proto::base64Encode(png.data(), png.size());
-            std::string line = m5proto::encode_screenshot_ack(
-                env.id, 0, true, canvas_.width(), canvas_.height(), b64, nullptr);
-            send(line.c_str(), line.size());
+        const uint8_t* data = nullptr;
+        std::size_t    len  = 0;
+        int            w = 0, h = 0;
+        const char*    fmt = "";
+        if (board_ && board_->transport && canvas_.rawFrame(&data, &len, &w, &h, &fmt) && data &&
+            len) {
+            // Stream the ack: header, then base64 pixels in chunks (the full
+            // base64 string won't fit the internal heap), then the tail.
+            auto* tx = board_->transport;
+            char  hdr[160];
+            int   n = std::snprintf(
+                hdr, sizeof(hdr),
+                "{\"v\":1,\"id\":\"%s\",\"k\":\"screenshot.ack\",\"t\":0,"
+                  "\"p\":{\"ok\":true,\"w\":%d,\"h\":%d,\"fmt\":\"%s\",\"data_b64\":\"",
+                env.id, w, h, fmt);
+            if (n > 0) tx->write(reinterpret_cast<const uint8_t*>(hdr), static_cast<std::size_t>(n));
+            m5proto::base64EncodeStream(data, len, [tx](const char* c, std::size_t l) {
+                tx->write(reinterpret_cast<const uint8_t*>(c), l);
+            });
+            const char* tail = "\"}}\n";
+            tx->write(reinterpret_cast<const uint8_t*>(tail), 4);
         } else {
-            std::string line = m5proto::encode_screenshot_ack(
-                env.id, 0, false, 0, 0, std::string(), "capture_unsupported");
+            std::string line =
+                m5proto::encode_screenshot_ack(env.id, 0, false, "capture_unsupported");
             send(line.c_str(), line.size());
         }
         return;

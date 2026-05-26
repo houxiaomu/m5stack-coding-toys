@@ -1,7 +1,6 @@
 #include "canvas_m5gfx.h"
 
-#include <cstdlib>
-#include <vector>
+#include <cstddef>
 
 namespace m5render {
 
@@ -125,17 +124,20 @@ int CoreS3Canvas::measureText(const char* s, Font f) {
     return M5.Display.textWidth(s);
 }
 
-bool CoreS3Canvas::capturePng(std::vector<uint8_t>& out) {
+// Expose the off-screen sprite's RGB565 buffer directly (no copy). The app
+// base64-streams these bytes to the host, which encodes the PNG — on-device PNG
+// deflate (createPng) is unusably slow because miniz's compressor runs against
+// PSRAM. 16bpp → 2 bytes/pixel.
+bool CoreS3Canvas::rawFrame(const uint8_t** data, std::size_t* len, int* w, int* h,
+                            const char** fmt) {
     if (!ready_) return false;
-    std::size_t len = 0;
-    void* png = sprite_.createPng(&len);  // M5GFX encodes the off-screen sprite
-    if (!png || len == 0) {
-        if (png) free(png);
-        return false;
-    }
-    const uint8_t* p = static_cast<const uint8_t*>(png);
-    out.assign(p, p + len);
-    free(png);  // createPng returns a malloc'd buffer; caller frees
+    const void* buf = sprite_.getBuffer();
+    if (!buf) return false;
+    *data = static_cast<const uint8_t*>(buf);
+    *w = sprite_.width();
+    *h = sprite_.height();
+    *len = static_cast<std::size_t>(*w) * static_cast<std::size_t>(*h) * 2;
+    *fmt = "rgb565";
     return true;
 }
 

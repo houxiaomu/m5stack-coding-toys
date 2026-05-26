@@ -135,16 +135,25 @@ function dmWith(session: unknown): DeviceManager {
 }
 
 describe('screenshot control op', () => {
-  it('writes the decoded png to the given path', async () => {
+  it('encodes the raw rgb565 frame into a PNG at the given path', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'm5shot-'))
     const out = join(dir, 'shot.png')
+    // 2×2 rgb565 frame (8 bytes) base64-encoded.
+    const data_b64 = Buffer.from([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]).toString(
+      'base64',
+    )
     const session = {
-      request: async () => ({ k: 'screenshot.ack', p: { ok: true, png_b64: 'aGk=' } }),
+      request: async () => ({
+        k: 'screenshot.ack',
+        p: { ok: true, w: 2, h: 2, fmt: 'rgb565', data_b64 },
+      }),
     }
     const h = makeControlHandler(dmWith(session))
     const r = await h.screenshot(out)
     expect(r).toEqual({ ok: true, path: out })
-    expect(readFileSync(out).toString()).toBe('hi') // base64 "aGk=" === "hi"
+    // Output is a real PNG: 8-byte signature.
+    const bytes = readFileSync(out)
+    expect([...bytes.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
     rmSync(dir, { recursive: true, force: true })
   })
 

@@ -86,23 +86,18 @@ inline std::size_t encode_hello_ack(
     return detail::serialize_or_zero(doc, out, out_cap);
 }
 
-// Build a screenshot.ack line by string concatenation. base64 uses only
-// [A-Za-z0-9+/=] and `err` is a controlled constant — neither needs JSON
-// escaping — so we avoid ArduinoJson's copies of a multi-KB payload.
-inline std::string encode_screenshot_ack(
-    const char* id, uint64_t t, bool ok,
-    int w, int h, const std::string& png_b64, const char* err) {
+// Build a small screenshot.ack line (the error / no-data case). The success
+// case is streamed directly by App (the raw frame is too big to hold as a
+// std::string), so this only emits {ok:false, err} or a bare {ok}. `err` is a
+// controlled constant and needs no JSON escaping.
+inline std::string encode_screenshot_ack(const char* id, uint64_t t, bool ok, const char* err) {
   std::string s = "{\"v\":1";
   if (id && id[0]) { s += ",\"id\":\""; s += id; s += "\""; }
   s += ",\"k\":\""; s += kind::screenshot_ack; s += "\",\"t\":";
   s += std::to_string(t);
   s += ",\"p\":{\"ok\":";
   s += ok ? "true" : "false";
-  if (ok) {
-    s += ",\"w\":"; s += std::to_string(w);
-    s += ",\"h\":"; s += std::to_string(h);
-    s += ",\"fmt\":\"png\",\"png_b64\":\""; s += png_b64; s += "\"";
-  } else if (err && err[0]) {
+  if (!ok && err && err[0]) {
     s += ",\"err\":\""; s += err; s += "\"";
   }
   s += "}}";

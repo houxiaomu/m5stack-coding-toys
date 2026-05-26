@@ -14,14 +14,14 @@ describe('screenshot protocol frames', () => {
     const wire = encode({
       k: 'screenshot.ack',
       id: 'm1',
-      p: { ok: true, w: 320, h: 240, fmt: 'png', png_b64: 'iVBORw==' },
+      p: { ok: true, w: 320, h: 240, fmt: 'rgb565', data_b64: 'EjRWeJq83vA=' },
     })
     const env = decode(wire)
     expect(env.k).toBe('screenshot.ack')
-    const p = env.p as { ok: boolean; w?: number; png_b64?: string }
+    const p = env.p as { ok: boolean; w?: number; data_b64?: string }
     expect(p.ok).toBe(true)
     expect(p.w).toBe(320)
-    expect(p.png_b64).toBe('iVBORw==')
+    expect(p.data_b64).toBe('EjRWeJq83vA=')
   })
 
   it('defaults fmt to png when omitted on a request', () => {

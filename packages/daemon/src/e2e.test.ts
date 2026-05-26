@@ -121,10 +121,10 @@ describe('m5ctd e2e (daemon ↔ fake-firmware via socket)', () => {
       const reply = await send(h.socketPath, { op: 'screenshot', out: outPath })
       expect(JSON.parse(reply)).toEqual({ ok: true, path: outPath })
 
-      // The fake-firmware replies with png_b64:'iVBORw==' which decodes to
-      // the 4-byte PNG magic: 0x89 0x50 0x4e 0x47.
+      // The fake-firmware replies with a raw rgb565 frame; the daemon encodes
+      // a PNG host-side. Assert the output is a real PNG (8-byte signature).
       const bytes = readFileSync(outPath)
-      expect(bytes).toEqual(Buffer.from('iVBORw==', 'base64'))
+      expect([...bytes.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
     } finally {
       rmSync(outDir, { recursive: true, force: true })
     }
