@@ -22,6 +22,13 @@ static Board makeBoard(MockTransport& t) {
   return b;
 }
 
+static Board makeTouchBoard(MockTransport& t, m5hal::mock::MockDisplay& d, m5hal::mock::MockInput& i) {
+  Board b = makeBoard(t);
+  b.display = &d;
+  b.input = &i;
+  return b;
+}
+
 void setUp() { g_now = 0; }
 void tearDown() {}
 
@@ -119,6 +126,77 @@ void test_screenshot_returns_ack_with_raw_frame() {
   TEST_ASSERT_TRUE(tx.find("\"data_b64\":\"EjRWeJq83vA=\"") != std::string::npos);
 }
 
+void test_tap_returns_ack_with_matching_id() {
+  MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
+  Board b = makeTouchBoard(t, d, i);
+  App app(c, &b); app.setNowFn(mockNow);
+  const char* req = "{\"v\":1,\"k\":\"tap\",\"t\":0,\"id\":\"m2\",\"p\":{\"x\":160,\"y\":120,\"duration_ms\":50}}";
+  app.handleLine(req, std::strlen(req));
+
+  const std::string tx = t.drain_tx();
+  TEST_ASSERT_TRUE(tx.find("\"k\":\"tap.ack\"") != std::string::npos);
+  TEST_ASSERT_TRUE(tx.find("\"id\":\"m2\"") != std::string::npos);
+  TEST_ASSERT_TRUE(tx.find("\"ok\":true") != std::string::npos);
+}
+
+void test_tap_advances_page_when_live() {
+  MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
+  Board b = makeTouchBoard(t, d, i);
+  App app(c, &b); app.setNowFn(mockNow);
+  const char* active = "{\"v\":1,\"k\":\"status\",\"t\":0,\"p\":{\"state\":\"active\"}}";
+  app.handleLine(active, std::strlen(active));
+  TEST_ASSERT_EQUAL(static_cast<int>(PageId::Overview), static_cast<int>(app.page()));
+
+  const char* req = "{\"v\":1,\"k\":\"tap\",\"t\":1,\"id\":\"m3\",\"p\":{\"x\":160,\"y\":120,\"duration_ms\":50}}";
+  app.handleLine(req, std::strlen(req));
+  TEST_ASSERT_EQUAL(static_cast<int>(PageId::Cost), static_cast<int>(app.page()));
+}
+
+void test_tap_does_not_advance_page_when_linked() {
+  MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
+  Board b = makeTouchBoard(t, d, i);
+  App app(c, &b); app.setNowFn(mockNow);
+  const char* ping = "{\"v\":1,\"k\":\"ping\",\"t\":0,\"id\":\"p1\",\"p\":{}}";
+  app.handleLine(ping, std::strlen(ping));
+  TEST_ASSERT_EQUAL(static_cast<int>(App::LinkState::Linked), static_cast<int>(app.link()));
+  TEST_ASSERT_EQUAL(static_cast<int>(PageId::Overview), static_cast<int>(app.page()));
+
+  const char* req = "{\"v\":1,\"k\":\"tap\",\"t\":1,\"id\":\"m4\",\"p\":{\"x\":160,\"y\":120,\"duration_ms\":50}}";
+  app.handleLine(req, std::strlen(req));
+  TEST_ASSERT_EQUAL(static_cast<int>(PageId::Overview), static_cast<int>(app.page()));
+  const std::string tx = t.drain_tx();
+  TEST_ASSERT_TRUE(tx.find("\"k\":\"tap.ack\"") != std::string::npos);
+  TEST_ASSERT_TRUE(tx.find("\"ok\":true") != std::string::npos);
+}
+
+void test_tap_out_of_bounds_returns_error() {
+  MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
+  Board b = makeTouchBoard(t, d, i);
+  App app(c, &b); app.setNowFn(mockNow);
+  const char* req = "{\"v\":1,\"k\":\"tap\",\"t\":0,\"id\":\"m5\",\"p\":{\"x\":320,\"y\":120,\"duration_ms\":50}}";
+  app.handleLine(req, std::strlen(req));
+
+  const std::string tx = t.drain_tx();
+  TEST_ASSERT_TRUE(tx.find("\"k\":\"tap.ack\"") != std::string::npos);
+  TEST_ASSERT_TRUE(tx.find("\"ok\":false") != std::string::npos);
+  TEST_ASSERT_TRUE(tx.find("\"err\":\"out_of_bounds\"") != std::string::npos);
+}
+
+void test_tap_without_touch_returns_unsupported() {
+  MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d;
+  Board b = makeBoard(t);
+  b.display = &d;
+  b.input = nullptr;
+  App app(c, &b); app.setNowFn(mockNow);
+  const char* req = "{\"v\":1,\"k\":\"tap\",\"t\":0,\"id\":\"m6\",\"p\":{\"x\":160,\"y\":120,\"duration_ms\":50}}";
+  app.handleLine(req, std::strlen(req));
+
+  const std::string tx = t.drain_tx();
+  TEST_ASSERT_TRUE(tx.find("\"k\":\"tap.ack\"") != std::string::npos);
+  TEST_ASSERT_TRUE(tx.find("\"ok\":false") != std::string::npos);
+  TEST_ASSERT_TRUE(tx.find("\"err\":\"touch_unsupported\"") != std::string::npos);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_boot_is_nolink);
@@ -129,5 +207,10 @@ int main(int, char**) {
   RUN_TEST(test_link_silence_reverts_to_nolink);
   RUN_TEST(test_usb_disconnect_reverts_to_nolink_immediately);
   RUN_TEST(test_screenshot_returns_ack_with_raw_frame);
+  RUN_TEST(test_tap_returns_ack_with_matching_id);
+  RUN_TEST(test_tap_advances_page_when_live);
+  RUN_TEST(test_tap_does_not_advance_page_when_linked);
+  RUN_TEST(test_tap_out_of_bounds_returns_error);
+  RUN_TEST(test_tap_without_touch_returns_unsupported);
   return UNITY_END();
 }

@@ -104,4 +104,18 @@ inline std::string encode_screenshot_ack(const char* id, uint64_t t, bool ok, co
   return s;
 }
 
+inline std::string encode_tap_ack(const char* id, uint64_t t, bool ok, const char* err) {
+  std::string s = "{\"v\":1";
+  if (id && id[0]) { s += ",\"id\":\""; s += id; s += "\""; }
+  s += ",\"k\":\""; s += kind::tap_ack; s += "\",\"t\":";
+  s += std::to_string(t);
+  s += ",\"p\":{\"ok\":";
+  s += ok ? "true" : "false";
+  if (!ok && err && err[0]) {
+    s += ",\"err\":\""; s += err; s += "\"";
+  }
+  s += "}}";
+  return s;
+}
+
 }  // namespace m5proto
