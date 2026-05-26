@@ -26,7 +26,7 @@ struct StatusModel {
   // burnHistory
   int burnN = 0; float burn[16] = {0};
   // workspace
-  char wsDir[64] = ""; char wsWorktree[40] = "";
+  char wsDir[96] = ""; char wsWorktree[40] = "";
   // git
   bool hasGit = false;
   char branch[40] = ""; int ahead = 0, behind = 0, staged = 0, unstaged = 0, untracked = 0;

@@ -103,6 +103,24 @@ static const char* tailPath(const char* path, int segments, char* out, size_t ca
   return out;
 }
 
+static const char* truncateHead(const char* s, int maxChars, char* out, size_t cap) {
+  if (!s) s = "";
+  int len = static_cast<int>(std::strlen(s));
+  if (len <= maxChars) return s;
+  int keep = maxChars > 3 ? maxChars - 3 : maxChars;
+  snprintf(out, cap, "%.*s...", keep, s);
+  return out;
+}
+
+static const char* truncateTail(const char* s, int maxChars, char* out, size_t cap) {
+  if (!s) s = "";
+  int len = static_cast<int>(std::strlen(s));
+  if (len <= maxChars) return s;
+  int keep = maxChars > 3 ? maxChars - 3 : maxChars;
+  snprintf(out, cap, "...%s", s + len - keep);
+  return out;
+}
+
 // ── PAGE · Overview ─────────────────────────────────────────────────────────
 static void drawOverview(const StatusModel& m, Canvas& c) {
   M5CT_DBG("ov start");
@@ -251,10 +269,13 @@ static void drawWorkspace(const StatusModel& m, Canvas& c) {
          dirty ? color::warn : color::accent);
   c.text(ab, 310, 58, Font::Label, Align::TopRight, color::mute);
 
-  char pathHint[32];
-  c.text(basenameOf(m.wsDir), 10, 64, Font::Label, Align::TopLeft, color::ink2);
-  c.text(tailPath(m.wsDir, 2, pathHint, sizeof(pathHint)), 310, 64,
-         Font::Label, Align::TopRight, color::mute);
+  char repoName[24], rawPathHint[48], pathHint[32];
+  const char* workspaceName = m.wsWorktree[0] ? m.wsWorktree : basenameOf(m.wsDir);
+  c.text(truncateHead(workspaceName, 18, repoName, sizeof(repoName)),
+         10, 64, Font::Label, Align::TopLeft, color::ink2);
+  c.text(truncateTail(tailPath(m.wsDir, 2, rawPathHint, sizeof(rawPathHint)),
+                      24, pathHint, sizeof(pathHint)),
+         310, 64, Font::Label, Align::TopRight, color::mute);
   c.drawHLine(10, 80, 300, color::hairline);
 
   int y = 92;
