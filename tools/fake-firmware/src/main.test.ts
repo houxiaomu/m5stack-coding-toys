@@ -96,4 +96,18 @@ describe('fake-firmware e2e', () => {
       fake.kill()
     }
   }, 5000)
+
+  it('replies tap.ack to a tap request', async () => {
+    const fake = runFake([])
+    try {
+      fake.send(encode({ k: 'tap', id: 'm1', p: { x: 160, y: 120, duration_ms: 50 } }))
+      const reply = await fake.recv
+      const env = decode(reply)
+      expect(env.k).toBe('tap.ack')
+      expect(env.id).toBe('m1')
+      expect(env.p).toEqual({ ok: true })
+    } finally {
+      fake.kill()
+    }
+  }, 5000)
 })
