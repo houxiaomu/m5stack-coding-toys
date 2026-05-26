@@ -29,6 +29,7 @@ coverage/
 # Superpowers skill session state
 .superpowers/
 .worktrees/
+.claude/worktrees/
 
 # Docs (specs/plans, kept local only)
 docs/
