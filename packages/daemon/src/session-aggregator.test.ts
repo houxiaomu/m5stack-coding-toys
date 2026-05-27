@@ -337,9 +337,9 @@ describe('SessionAggregator', () => {
     const frame = sess.send.mock.calls.at(-1)[0]
     expect(frame.p.model.short).toBe('A')
     expect(frame.p.focus.mode).toBe('pinned')
-    expect(
-      frame.p.sessions.find((s: { id: string }) => s.id === 's2').activity,
-    ).toBe('needs_attention')
+    expect(frame.p.sessions.find((s: { id: string }) => s.id === 's2').activity).toBe(
+      'needs_attention',
+    )
   })
 
   it('ignores hook events without a known session id', async () => {

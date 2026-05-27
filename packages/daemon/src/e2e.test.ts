@@ -70,9 +70,7 @@ function send(socketPath: string, req: object): Promise<string> {
 }
 
 function lastFakeStatus(log: string): Record<string, unknown> {
-  const lines = log
-    .split('\n')
-    .filter((line) => line.includes('[fake-firmware] status '))
+  const lines = log.split('\n').filter((line) => line.includes('[fake-firmware] status '))
   const last = lines.at(-1)
   if (!last) throw new Error(`no fake-firmware status in log: ${log}`)
   return JSON.parse(last.slice(last.indexOf('{')))

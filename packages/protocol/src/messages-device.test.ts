@@ -47,13 +47,13 @@ describe('device payloads', () => {
   })
 
   it('device.event accepts focus session selection', () => {
-    expect(
-      deviceEventPayload.parse({ kind: 'focus', target: 'session', sessionId: 's1' }),
-    ).toEqual({
-      kind: 'focus',
-      target: 'session',
-      sessionId: 's1',
-    })
+    expect(deviceEventPayload.parse({ kind: 'focus', target: 'session', sessionId: 's1' })).toEqual(
+      {
+        kind: 'focus',
+        target: 'session',
+        sessionId: 's1',
+      },
+    )
   })
 
   it('device.event rejects invalid focus selection payloads', () => {
