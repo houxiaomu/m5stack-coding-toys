@@ -82,13 +82,13 @@ async function main(): Promise<void> {
     },
   })
 
-  const router = new Router()
   const aggregator = new SessionAggregator(
     () => dm.currentSession(),
     new GitEnricher(),
     undefined,
     new FileAggregatorStore(aggregatorStatePath()),
   )
+  const router = new Router((focus) => void aggregator.setFocus(focus))
 
   // Re-wire 'event' to router on every successful (re)connect.
   dm.on('connected', () => {
@@ -102,7 +102,7 @@ async function main(): Promise<void> {
   server.setStatusLineHandler(
     (cc, meta) => void aggregator.ingest(cc as StatusLineInput, meta.ccPid),
   )
-  server.setHookEventHandler((ev) => void aggregator.ingestHookEvent(ev))
+  server.setHookEventHandler((ev, meta) => void aggregator.ingestHookEvent(ev, meta.sessionId))
   let lastActivityMs = Date.now()
   server.setActivityHandler(() => {
     lastActivityMs = Date.now()

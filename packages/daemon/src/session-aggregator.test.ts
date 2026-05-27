@@ -135,7 +135,7 @@ describe('SessionAggregator', () => {
     )
     const frame = sess.send.mock.calls.at(-1)[0]
     expect(frame.p.today.sessions).toBe(2) // s1 (restored) + s2
-    expect(frame.p.today.costUsd).toBeCloseTo(0.3, 2)
+    expect(frame.p.today.costUsd).toBeCloseTo(0.55, 2)
     expect(frame.p.burnHistory.length).toBe(1) // restored sample; restart tick adds none
   })
 
@@ -272,6 +272,84 @@ describe('SessionAggregator', () => {
     agg.checkLiveness()
     sess.send.mockClear()
     await agg.ingest({ model: { display_name: 'X' } }, 4242)
+    expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('working')
+  })
+
+  it('keeps separate foreground frames per session and emits session metadata', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+
+    await agg.ingest(
+      {
+        session_id: 's1',
+        model: { display_name: 'A' },
+        workspace: { current_dir: '/repo/a' },
+      },
+      111,
+      () => 1000,
+    )
+    await agg.ingest(
+      {
+        session_id: 's2',
+        model: { display_name: 'B' },
+        workspace: { current_dir: '/repo/b' },
+      },
+      222,
+      () => 2000,
+    )
+
+    const frame = sess.send.mock.calls.at(-1)[0]
+    expect(frame.p.model.short).toBe('A')
+    expect(frame.p.focus).toEqual({ mode: 'auto', index: 1, total: 2 })
+    expect(frame.p.sessions.map((s: { id: string; name: string }) => [s.id, s.name])).toEqual([
+      ['auto', 'AUTO'],
+      ['s1', 'a'],
+      ['s2', 'b'],
+    ])
+  })
+
+  it('auto foregrounds earliest needs_attention session', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+    await agg.ingest({ session_id: 's1', model: { display_name: 'A' } }, 111, () => 1000)
+    await agg.ingest({ session_id: 's2', model: { display_name: 'B' } }, 222, () => 2000)
+
+    await agg.ingestHookEvent('Notification', 's2')
+    expect(sess.send.mock.calls.at(-1)[0].p.model.short).toBe('B')
+    await agg.ingestHookEvent('Notification', 's1')
+    expect(sess.send.mock.calls.at(-1)[0].p.model.short).toBe('A')
+  })
+
+  it('pinned mode ignores another session needing attention', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+    await agg.ingest({ session_id: 's1', model: { display_name: 'A' } }, 111, () => 1000)
+    await agg.ingest({ session_id: 's2', model: { display_name: 'B' } }, 222, () => 2000)
+
+    await agg.setFocus({ target: 'session', sessionId: 's1' })
+    await agg.ingestHookEvent('Notification', 's2')
+    const frame = sess.send.mock.calls.at(-1)[0]
+    expect(frame.p.model.short).toBe('A')
+    expect(frame.p.focus.mode).toBe('pinned')
+    expect(
+      frame.p.sessions.find((s: { id: string }) => s.id === 's2').activity,
+    ).toBe('needs_attention')
+  })
+
+  it('ignores hook events without a known session id', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+    await agg.ingest({ session_id: 's1', model: { display_name: 'A' } }, 111, () => 1000)
+
+    await agg.ingestHookEvent('Notification')
     expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('working')
   })
 })
