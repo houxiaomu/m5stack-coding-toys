@@ -174,4 +174,46 @@ describe('m5ctd e2e (daemon ↔ fake-firmware via socket)', () => {
       focus: { mode: 'auto', index: 1, total: 2 },
     })
   }, 15000)
+
+  it('reports terminal rows by pid when one pid changes Claude session id', async () => {
+    h = await startDaemon()
+    await new Promise((r) => setTimeout(r, 1500))
+
+    await send(h.socketPath, {
+      statusLine: {
+        session_id: 's1',
+        model: { id: 'a', display_name: 'A' },
+        workspace: { current_dir: '/repo/pm' },
+      },
+      ccPid: 83876,
+      sessionId: 's1',
+    })
+    await send(h.socketPath, {
+      statusLine: {
+        session_id: 's2',
+        model: { id: 'b', display_name: 'B' },
+        workspace: { current_dir: '/repo/pm' },
+      },
+      ccPid: 83876,
+      sessionId: 's2',
+    })
+    await send(h.socketPath, {
+      statusLine: {
+        session_id: 's3',
+        model: { id: 'c', display_name: 'C' },
+        workspace: { current_dir: '/repo/m5toys' },
+      },
+      ccPid: 34930,
+      sessionId: 's3',
+    })
+    await new Promise((r) => setTimeout(r, 500))
+
+    const status = lastFakeStatus(h.output()) as { focus?: unknown; sessions?: unknown[] }
+    expect(status.focus).toEqual({ mode: 'auto', index: 1, total: 2 })
+    expect(status.sessions?.map((s: { id: string; name: string }) => [s.id, s.name])).toEqual([
+      ['auto', 'AUTO'],
+      ['pid:83876', 'pm'],
+      ['pid:34930', 'm5toys'],
+    ])
+  }, 15000)
 })
