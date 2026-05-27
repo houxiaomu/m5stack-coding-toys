@@ -174,7 +174,7 @@ void test_cost_rows_degrade_when_no_today_or_weekly() {
   m.hasToday = false; m.hasWeekly = false;
   MockCanvas c; renderPage(PageId::Cost, m, c);
   // Row labels still render; their values fall back to the dash placeholder.
-  TEST_ASSERT_TRUE(c.called("text", "TODAY"));
+  TEST_ASSERT_TRUE(c.called("text", "TODAY TOTAL"));
   TEST_ASSERT_TRUE(c.called("text", "WEEKLY"));
   TEST_ASSERT_TRUE(c.called("text", "—"));
 }
@@ -183,6 +183,39 @@ void test_header_status_dot_drawn() {
   StatusModel m;
   MockCanvas c; renderHeader(m, c);
   TEST_ASSERT_TRUE(c.calledPrefix("fillCircle"));
+}
+
+void test_header_shows_focus_label_when_multi_session() {
+  StatusModel m;
+  m.hasFocus = true;
+  m.focusPinned = false;
+  m.focusIndex = 2;
+  m.focusTotal = 4;
+  MockCanvas c; renderHeader(m, c);
+  TEST_ASSERT_TRUE(c.called("text", "AUTO 2/4"));
+}
+
+void test_header_hides_focus_label_for_single_session() {
+  StatusModel m;
+  m.hasFocus = true;
+  m.focusPinned = false;
+  m.focusIndex = 1;
+  m.focusTotal = 1;
+  MockCanvas c; renderHeader(m, c);
+  TEST_ASSERT_FALSE(c.called("text", "AUTO 1/1"));
+}
+
+void test_sessions_page_renders_rows() {
+  StatusModel m;
+  m.sessionN = 2;
+  strcpy(m.sessions[0].name, "AUTO");
+  m.sessions[0].autoMode = true;
+  strcpy(m.sessions[1].name, "repo-a");
+  m.sessions[1].activity = Activity::NeedsAttention;
+  MockCanvas c; renderPage(PageId::Sessions, m, c);
+  TEST_ASSERT_TRUE(c.called("text", "AUTO"));
+  TEST_ASSERT_TRUE(c.called("text", "repo-a"));
+  TEST_ASSERT_TRUE(c.called("text", "NEEDS YOU"));
 }
 
 void test_page_dots_draws_four() {
@@ -248,6 +281,9 @@ void setup() {
   RUN_TEST(test_header_badge_never_shows_ctx_high);
   RUN_TEST(test_cost_rows_degrade_when_no_today_or_weekly);
   RUN_TEST(test_header_status_dot_drawn);
+  RUN_TEST(test_header_shows_focus_label_when_multi_session);
+  RUN_TEST(test_header_hides_focus_label_for_single_session);
+  RUN_TEST(test_sessions_page_renders_rows);
   RUN_TEST(test_page_dots_draws_four);
   RUN_TEST(test_overview_renders_header_and_dots);
   RUN_TEST(test_waiting_linked_shows_connected_copy);

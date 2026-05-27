@@ -62,6 +62,13 @@ void renderHeader(const StatusModel& m, Canvas& c) {
   const char* model = m.modelShort[0] ? m.modelShort : "Claude";
   c.text(model, 26, 17, Font::Title, Align::MiddleLeft, color::ink);
 
+  if (m.hasFocus && m.focusTotal >= 2) {
+    char focus[20];
+    snprintf(focus, sizeof(focus), "%s %d/%d",
+             m.focusPinned ? "PINNED" : "AUTO", m.focusIndex, m.focusTotal);
+    c.text(focus, 170, 17, Font::Label, Align::MiddleCenter, color::ink2);
+  }
+
   // Activity badge top-right. Color + label come from m.activity; brightness is
   // the app's animation phase (255 = full color). Context warning is NOT shown
   // here — the data-page context tiles already render warn color over threshold.
@@ -215,7 +222,7 @@ static void drawCost(const StatusModel& m, Canvas& c) {
   c.fillScreen(color::bg);
   renderHeader(m, c);
 
-  c.text("SESSION", 10, 42, Font::Label, Align::TopLeft, color::mute);
+  c.text("THIS SESSION", 10, 42, Font::Label, Align::TopLeft, color::mute);
 
   if (!m.hasCost) {
     c.text(kDash, 10, 54, Font::BigNumber, Align::TopLeft, color::ink);
@@ -235,7 +242,7 @@ static void drawCost(const StatusModel& m, Canvas& c) {
   if (m.burnN > 1)
     c.sparkline(165, 50, 145, 50, m.burn, m.burnN, color::accent);
 
-  // Rows: TODAY, then aggregate WEEKLY (no per-model split).
+  // Rows: account-level today total, then aggregate WEEKLY (no per-model split).
   int y = 130;
   auto row = [&](const char* l, bool has, const char* v) {
     c.text(l, 10, y, Font::Label, Align::TopLeft, color::mute);
@@ -246,7 +253,7 @@ static void drawCost(const StatusModel& m, Canvas& c) {
   char tBuf[16], wBuf[16];
   snprintf(tBuf, sizeof(tBuf), "$%.2f", m.todayCost);
   snprintf(wBuf, sizeof(wBuf), "%d%%", m.weeklyPct);
-  row("TODAY",  m.hasToday,  tBuf);
+  row("TODAY TOTAL",  m.hasToday,  tBuf);
   row("WEEKLY", m.hasWeekly, wBuf);
 
   renderPageDots(PageId::Cost, c);
@@ -366,6 +373,36 @@ static void drawWorkspace(const StatusModel& m, Canvas& c) {
   renderPageDots(PageId::Workspace, c);
 }
 
+// ── PAGE · Sessions ─────────────────────────────────────────────────────────
+static void drawSessions(const StatusModel& m, Canvas& c) {
+  c.fillScreen(color::bg);
+  renderHeader(m, c);
+
+  c.text("SESSIONS", 10, 42, Font::Label, Align::TopLeft, color::mute);
+  if (m.sessionN <= 0) {
+    c.text(kDash, 10, 66, Font::Body, Align::TopLeft, color::ink);
+    renderPageDots(PageId::Sessions, c);
+    return;
+  }
+
+  const int maxRows = m.sessionN < 5 ? m.sessionN : 5;
+  int y = 62;
+  for (int i = 0; i < maxRows; ++i) {
+    const auto& s = m.sessions[i];
+    const bool cursor = i == m.pickerIndex;
+    const uint16_t border = s.pinned ? color::accent : (s.selected ? color::ink2 : color::cardLine);
+    c.fillRoundRect(10, y, 300, 27, 4, cursor ? color::accSoft : color::card);
+    c.drawRoundRect(10, y, 300, 27, 4, border);
+    c.text(s.name[0] ? s.name : kDash, 18, y + 14, Font::Label,
+           Align::MiddleLeft, color::ink);
+    c.text(activityLabel(s.activity), 302, y + 14, Font::Label,
+           Align::MiddleRight, activityColor(s.activity));
+    y += 31;
+  }
+
+  renderPageDots(PageId::Sessions, c);
+}
+
 // ── PAGE · Waiting (uses DeviceInfo, NOT StatusModel) ───────────────────────
 void renderWaiting(const DeviceInfo& d, bool linked, Canvas& c) {
   c.fillScreen(color::bg);
@@ -411,7 +448,16 @@ void renderPage(PageId id, const StatusModel& m, Canvas& c) {
     case PageId::Cost:      drawCost(m, c);      break;
     case PageId::Limits:    drawLimits(m, c);    break;
     case PageId::Workspace: drawWorkspace(m, c); break;
+    case PageId::Sessions:  drawSessions(m, c);  break;
   }
+}
+
+bool hasSessionsPage(const StatusModel& m) {
+  return m.sessionN >= 3;  // AUTO row + at least two live sessions
+}
+
+int pageCountFor(const StatusModel& m) {
+  return hasSessionsPage(m) ? kMaxPageCount : kPageCount;
 }
 
 }  // namespace m5render

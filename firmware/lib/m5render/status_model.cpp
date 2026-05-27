@@ -9,13 +9,17 @@ static void copyStr(char* dst, size_t cap, const char* src) {
   strncpy(dst, src, cap - 1); dst[cap - 1] = 0;
 }
 
+static Activity parseActivity(const char* act) {
+  if (strcmp(act, "needs_attention") == 0) return Activity::NeedsAttention;
+  if (strcmp(act, "awaiting_input") == 0) return Activity::AwaitingInput;
+  return Activity::Working;
+}
+
 bool parseStatusFrame(JsonObjectConst doc, StatusModel& m) {
   m.sessionActive = strcmp(doc["state"] | "active", "idle") != 0;
   {
     const char* act = doc["activity"] | "working";
-    if (strcmp(act, "needs_attention") == 0) m.activity = Activity::NeedsAttention;
-    else if (strcmp(act, "awaiting_input") == 0) m.activity = Activity::AwaitingInput;
-    else m.activity = Activity::Working;
+    m.activity = parseActivity(act);
   }
   if (doc["model"]["short"].is<const char*>()) copyStr(m.modelShort, sizeof(m.modelShort), doc["model"]["short"]);
 
@@ -93,6 +97,37 @@ bool parseStatusFrame(JsonObjectConst doc, StatusModel& m) {
     m.hasPr = true;
     m.prNumber = doc["pr"]["number"] | 0;
     copyStr(m.prReview, sizeof(m.prReview), doc["pr"]["reviewState"] | "");
+  }
+  if (doc["focus"].is<JsonObjectConst>()) {
+    JsonObjectConst focus = doc["focus"].as<JsonObjectConst>();
+    m.hasFocus = true;
+    const char* mode = focus["mode"] | "auto";
+    m.focusPinned = strcmp(mode, "pinned") == 0;
+    m.focusIndex = focus["index"] | 0;
+    m.focusTotal = focus["total"] | 0;
+  } else {
+    m.hasFocus = false;
+    m.focusPinned = false;
+    m.focusIndex = 0;
+    m.focusTotal = 0;
+  }
+  if (doc["sessions"].is<JsonArrayConst>()) {
+    m.sessionN = 0;
+    for (JsonObjectConst item : doc["sessions"].as<JsonArrayConst>()) {
+      if (m.sessionN >= 8) break;
+      StatusModel::SessionSummary& s = m.sessions[m.sessionN++];
+      s.index = item["index"] | 0;
+      copyStr(s.id, sizeof(s.id), item["id"] | "");
+      copyStr(s.name, sizeof(s.name), item["name"] | "");
+      s.activity = parseActivity(item["activity"] | "working");
+      s.selected = item["selected"] | false;
+      s.pinned = item["pinned"] | false;
+      s.autoMode = item["auto"] | false;
+    }
+    if (m.pickerIndex >= m.sessionN) m.pickerIndex = 0;
+  } else {
+    m.sessionN = 0;
+    m.pickerIndex = 0;
   }
   return true;
 }

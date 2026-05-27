@@ -52,6 +52,23 @@ struct StatusModel {
   TopFile topFiles[3];
   // pr
   bool hasPr = false; int prNumber = 0; char prReview[16] = "";
+  // multi-session focus metadata
+  bool hasFocus = false;
+  bool focusPinned = false;
+  int focusIndex = 0;
+  int focusTotal = 0;
+  struct SessionSummary {
+    int index = 0;
+    char id[32] = "";
+    char name[40] = "";
+    Activity activity = Activity::Working;
+    bool selected = false;
+    bool pinned = false;
+    bool autoMode = false;
+  };
+  int sessionN = 0;
+  int pickerIndex = 0;  // local UI state; not parsed from the wire
+  SessionSummary sessions[8];
 };
 
 struct DeviceInfo {

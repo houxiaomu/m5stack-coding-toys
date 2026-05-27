@@ -103,6 +103,29 @@ void test_activity_parses_all_three_values() {
   TEST_ASSERT_EQUAL(static_cast<int>(Activity::NeedsAttention), static_cast<int>(c.activity));
 }
 
+void test_parse_focus_and_sessions() {
+  StatusModel m;
+  TEST_ASSERT_TRUE(parseStatusFrame(
+    "{\"state\":\"active\",\"focus\":{\"mode\":\"pinned\",\"index\":2,\"total\":3},"
+    "\"sessions\":["
+    "{\"index\":0,\"id\":\"auto\",\"name\":\"AUTO\",\"activity\":\"working\",\"auto\":true},"
+    "{\"index\":1,\"id\":\"s1\",\"name\":\"repo-a\",\"activity\":\"awaiting_input\"},"
+    "{\"index\":2,\"id\":\"s2\",\"name\":\"repo-b\",\"activity\":\"needs_attention\","
+    "\"selected\":true,\"pinned\":true}"
+    "]}",
+    m));
+  TEST_ASSERT_TRUE(m.hasFocus);
+  TEST_ASSERT_TRUE(m.focusPinned);
+  TEST_ASSERT_EQUAL(2, m.focusIndex);
+  TEST_ASSERT_EQUAL(3, m.focusTotal);
+  TEST_ASSERT_EQUAL(3, m.sessionN);
+  TEST_ASSERT_EQUAL_STRING("repo-b", m.sessions[2].name);
+  TEST_ASSERT_TRUE(m.sessions[2].selected);
+  TEST_ASSERT_TRUE(m.sessions[2].pinned);
+  TEST_ASSERT_EQUAL(static_cast<int>(Activity::NeedsAttention),
+                    static_cast<int>(m.sessions[2].activity));
+}
+
 void setup() {
   UNITY_BEGIN();
   RUN_TEST(test_minimal_frame_sets_sessionActive);
@@ -113,6 +136,7 @@ void setup() {
   RUN_TEST(test_git_diff_parses_summary_and_clamps_top_files);
   RUN_TEST(test_activity_defaults_to_working_when_absent);
   RUN_TEST(test_activity_parses_all_three_values);
+  RUN_TEST(test_parse_focus_and_sessions);
   UNITY_END();
 }
 void loop() {}

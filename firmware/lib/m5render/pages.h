@@ -4,8 +4,11 @@
 
 namespace m5render {
 
-enum class PageId : uint8_t { Overview = 0, Cost = 1, Limits = 2, Workspace = 3 };
+enum class PageId : uint8_t { Overview = 0, Cost = 1, Limits = 2, Workspace = 3, Sessions = 4 };
 constexpr int kPageCount = 4;
+constexpr int kMaxPageCount = 5;
+bool hasSessionsPage(const StatusModel& m);
+int pageCountFor(const StatusModel& m);
 
 // Badge label/color for an activity (single source of truth for the header).
 const char* activityLabel(Activity a);
