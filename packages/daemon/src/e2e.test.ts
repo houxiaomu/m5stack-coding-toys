@@ -69,6 +69,15 @@ function send(socketPath: string, req: object): Promise<string> {
   })
 }
 
+function lastFakeStatus(log: string): Record<string, unknown> {
+  const lines = log
+    .split('\n')
+    .filter((line) => line.includes('[fake-firmware] status '))
+  const last = lines.at(-1)
+  if (!last) throw new Error(`no fake-firmware status in log: ${log}`)
+  return JSON.parse(last.slice(last.indexOf('{')))
+}
+
 let h: Harness | null = null
 
 afterEach(async () => {
@@ -128,5 +137,43 @@ describe('m5ctd e2e (daemon ↔ fake-firmware via socket)', () => {
     } finally {
       rmSync(outDir, { recursive: true, force: true })
     }
+  }, 15000)
+
+  it('auto foregrounds the earliest needs_attention session', async () => {
+    h = await startDaemon()
+    await new Promise((r) => setTimeout(r, 1500))
+
+    await send(h.socketPath, {
+      statusLine: {
+        session_id: 's1',
+        model: { id: 'a', display_name: 'A' },
+      },
+      ccPid: 111,
+      sessionId: 's1',
+    })
+    await send(h.socketPath, {
+      statusLine: {
+        session_id: 's2',
+        model: { id: 'b', display_name: 'B' },
+      },
+      ccPid: 222,
+      sessionId: 's2',
+    })
+    await new Promise((r) => setTimeout(r, 300))
+
+    await send(h.socketPath, { event: 'Notification', sessionId: 's2' })
+    await new Promise((r) => setTimeout(r, 300))
+    expect(lastFakeStatus(h.output())).toMatchObject({
+      activity: 'needs_attention',
+      model: { short: 'B' },
+    })
+
+    await send(h.socketPath, { event: 'Notification', sessionId: 's1' })
+    await new Promise((r) => setTimeout(r, 300))
+    expect(lastFakeStatus(h.output())).toMatchObject({
+      activity: 'needs_attention',
+      model: { short: 'A' },
+      focus: { mode: 'auto', index: 1, total: 2 },
+    })
   }, 15000)
 })
