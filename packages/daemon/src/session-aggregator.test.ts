@@ -118,7 +118,7 @@ describe('SessionAggregator', () => {
       undefined,
       () => t + 60_000,
     )
-    expect(store.state?.todaySessions).toEqual(['s1'])
+    expect(store.state?.todaySessions).toEqual(['sid:s1'])
 
     // Second lifetime (restart): a fresh aggregator hydrates from the store.
     const sess = fakeSession()
@@ -305,8 +305,8 @@ describe('SessionAggregator', () => {
     expect(frame.p.focus).toEqual({ mode: 'auto', index: 1, total: 2 })
     expect(frame.p.sessions.map((s: { id: string; name: string }) => [s.id, s.name])).toEqual([
       ['auto', 'AUTO'],
-      ['s1', 'a'],
-      ['s2', 'b'],
+      ['pid:111', 'a'],
+      ['pid:222', 'b'],
     ])
   })
 
@@ -332,14 +332,86 @@ describe('SessionAggregator', () => {
     await agg.ingest({ session_id: 's1', model: { display_name: 'A' } }, 111, () => 1000)
     await agg.ingest({ session_id: 's2', model: { display_name: 'B' } }, 222, () => 2000)
 
-    await agg.setFocus({ target: 'session', sessionId: 's1' })
+    await agg.setFocus({ target: 'session', sessionId: 'pid:111' })
     await agg.ingestHookEvent('Notification', 's2')
     const frame = sess.send.mock.calls.at(-1)[0]
     expect(frame.p.model.short).toBe('A')
     expect(frame.p.focus.mode).toBe('pinned')
-    expect(frame.p.sessions.find((s: { id: string }) => s.id === 's2').activity).toBe(
+    expect(frame.p.sessions.find((s: { id: string }) => s.id === 'pid:222').activity).toBe(
       'needs_attention',
     )
+  })
+
+  it('updates one terminal slot when the same pid changes session id', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+
+    await agg.ingest(
+      {
+        session_id: 's1',
+        workspace: { current_dir: '/repo/pm' },
+        model: { display_name: 'A' },
+      },
+      83876,
+      () => 1000,
+    )
+    await agg.ingest(
+      {
+        session_id: 's2',
+        workspace: { current_dir: '/repo/pm' },
+        model: { display_name: 'B' },
+      },
+      83876,
+      () => 2000,
+    )
+    await agg.ingest(
+      {
+        session_id: 'other',
+        workspace: { current_dir: '/repo/m5toys' },
+        model: { display_name: 'C' },
+      },
+      34930,
+      () => 3000,
+    )
+
+    const frame = sess.send.mock.calls.at(-1)[0]
+    expect(frame.p.focus).toEqual({ mode: 'auto', index: 1, total: 2 })
+    expect(frame.p.sessions.map((s: { id: string; name: string }) => [s.id, s.name])).toEqual([
+      ['auto', 'AUTO'],
+      ['pid:83876', 'pm'],
+      ['pid:34930', 'm5toys'],
+    ])
+  })
+
+  it('routes hook events through old and new session aliases for one terminal slot', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+
+    await agg.ingest({ session_id: 's1', model: { display_name: 'A' } }, 111, () => 1000)
+    await agg.ingest({ session_id: 's2', model: { display_name: 'B' } }, 111, () => 2000)
+
+    await agg.ingestHookEvent('Notification', 's1')
+    expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('needs_attention')
+
+    await agg.ingestHookEvent('UserPromptSubmit', 's2')
+    expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('working')
+  })
+
+  it('disambiguates duplicate terminal names', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+
+    await agg.ingest({ session_id: 's1', workspace: { current_dir: '/a/pm' } }, 111, () => 1000)
+    await agg.ingest({ session_id: 's2', workspace: { current_dir: '/b/pm' } }, 222, () => 2000)
+
+    const frame = sess.send.mock.calls.at(-1)[0]
+    expect(frame.p.sessions.map((s: { name: string }) => s.name)).toEqual(['AUTO', 'pm', 'pm #2'])
   })
 
   it('ignores hook events without a known session id', async () => {

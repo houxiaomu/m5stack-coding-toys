@@ -18,9 +18,11 @@ interface CostSample {
 type FocusMode = 'auto' | 'pinned'
 export type FocusRequest = { target: 'auto' } | { target: 'session'; sessionId: string }
 
-interface TrackedSession {
+interface TerminalSlot {
   id: string
   pid?: number
+  currentSessionId?: string
+  knownSessionIds: Set<string>
   firstSeenMs: number
   lastActivityMs: number
   activity: Activity
@@ -45,11 +47,12 @@ function defaultPidAlive(pid: number): boolean {
  * the connected device.
  */
 export class SessionAggregator {
-  private sessions = new Map<string, TrackedSession>()
+  private slots = new Map<string, TerminalSlot>()
+  private sessionAliases = new Map<string, string>()
   private order: string[] = []
   private focusMode: FocusMode = 'auto'
-  private pinnedSessionId: string | undefined
-  private foregroundSessionId: string | undefined
+  private pinnedSlotId: string | undefined
+  private foregroundSlotId: string | undefined
   private sentIdle = true
 
   private todayBaseCost = 0
@@ -75,10 +78,11 @@ export class SessionAggregator {
 
   async ingest(cc: StatusLineInput, ccPid?: number, now: () => number = Date.now): Promise<void> {
     const nowMs = now()
-    const id = this.sessionKey(cc, ccPid)
-    const tracked = this.ensureSession(id, nowMs)
+    const id = this.slotKey(cc, ccPid)
+    const tracked = this.ensureSlot(id, nowMs)
 
     tracked.pid = ccPid ?? tracked.pid
+    if (cc.session_id) this.rememberSessionAlias(tracked, cc.session_id)
     tracked.lastActivityMs = nowMs
     tracked.activity = tracked.activity ?? 'working'
     this.sentIdle = false
@@ -131,11 +135,11 @@ export class SessionAggregator {
   async setFocus(req: FocusRequest): Promise<void> {
     if (req.target === 'auto') {
       this.focusMode = 'auto'
-      this.pinnedSessionId = undefined
-    } else if (this.sessions.has(req.sessionId)) {
+      this.pinnedSlotId = undefined
+    } else if (this.slots.has(req.sessionId)) {
       this.focusMode = 'pinned'
-      this.pinnedSessionId = req.sessionId
-      this.foregroundSessionId = req.sessionId
+      this.pinnedSlotId = req.sessionId
+      this.foregroundSlotId = req.sessionId
     }
     await this.pushSelectedFrame()
   }
@@ -146,31 +150,23 @@ export class SessionAggregator {
     const nowMs = now()
     let removed = false
     for (const id of [...this.order]) {
-      const tracked = this.sessions.get(id)
+      const tracked = this.slots.get(id)
       if (!tracked) continue
       const ended =
         typeof tracked.pid === 'number'
           ? !this.pidAlive(tracked.pid)
           : nowMs - tracked.lastActivityMs > NO_PID_TTL_MS
       if (!ended) continue
-      this.sessions.delete(id)
-      this.order = this.order.filter((x) => x !== id)
-      this.todaySessionCosts.delete(id)
+      this.removeSlot(id)
       removed = true
-      if (this.pinnedSessionId === id) {
-        this.focusMode = 'auto'
-        this.pinnedSessionId = undefined
-        this.foregroundSessionId = undefined
-      }
-      if (this.foregroundSessionId === id) this.foregroundSessionId = undefined
     }
 
     if (!removed) return
 
-    if (this.sessions.size === 0) {
+    if (this.slots.size === 0) {
       if (this.sentIdle) return
       this.sentIdle = true
-      this.foregroundSessionId = undefined
+      this.foregroundSlotId = undefined
       log.info('all sessions ended → idle')
       void this.sendStatus({ state: 'idle' })
       return
@@ -179,36 +175,65 @@ export class SessionAggregator {
     void this.pushSelectedFrame()
   }
 
-  private sessionKey(cc: StatusLineInput, ccPid?: number): string {
-    return cc.session_id ?? (typeof ccPid === 'number' ? `pid:${ccPid}` : ANONYMOUS_SESSION_ID)
+  private slotKey(cc: StatusLineInput, ccPid?: number): string {
+    if (typeof ccPid === 'number') return `pid:${ccPid}`
+    if (cc.session_id) return `sid:${cc.session_id}`
+    return ANONYMOUS_SESSION_ID
   }
 
-  private ensureSession(id: string, nowMs: number): TrackedSession {
-    const existing = this.sessions.get(id)
+  private ensureSlot(id: string, nowMs: number): TerminalSlot {
+    const existing = this.slots.get(id)
     if (existing) return existing
-    const tracked: TrackedSession = {
+    const tracked: TerminalSlot = {
       id,
+      knownSessionIds: new Set(),
       firstSeenMs: nowMs,
       lastActivityMs: nowMs,
       activity: 'working',
       lastFrame: null,
       lastSample: null,
-      burnHistory: this.sessions.size === 0 ? this.restoredBurnHistory.splice(0) : [],
+      burnHistory: this.slots.size === 0 ? this.restoredBurnHistory.splice(0) : [],
     }
-    this.sessions.set(id, tracked)
+    this.slots.set(id, tracked)
     this.order.push(id)
     return tracked
   }
 
-  private sessionForHook(sessionId?: string): TrackedSession | null {
-    if (sessionId) return this.sessions.get(sessionId) ?? null
-    return this.sessions.get(ANONYMOUS_SESSION_ID) ?? null
+  private rememberSessionAlias(tracked: TerminalSlot, sessionId: string): void {
+    tracked.currentSessionId = sessionId
+    tracked.knownSessionIds.add(sessionId)
+    this.sessionAliases.set(sessionId, tracked.id)
+  }
+
+  private removeSlot(id: string): void {
+    const tracked = this.slots.get(id)
+    if (!tracked) return
+    this.slots.delete(id)
+    this.order = this.order.filter((x) => x !== id)
+    this.todaySessionCosts.delete(id)
+    for (const sessionId of tracked.knownSessionIds) {
+      if (this.sessionAliases.get(sessionId) === id) this.sessionAliases.delete(sessionId)
+    }
+    if (this.pinnedSlotId === id) {
+      this.focusMode = 'auto'
+      this.pinnedSlotId = undefined
+      this.foregroundSlotId = undefined
+    }
+    if (this.foregroundSlotId === id) this.foregroundSlotId = undefined
+  }
+
+  private sessionForHook(sessionId?: string): TerminalSlot | null {
+    if (sessionId) {
+      const slotId = this.sessionAliases.get(sessionId) ?? sessionId
+      return this.slots.get(slotId) ?? null
+    }
+    return this.slots.get(ANONYMOUS_SESSION_ID) ?? null
   }
 
   private async pushSelectedFrame(): Promise<void> {
     const selected = this.selectForeground()
     if (!selected?.lastFrame) return
-    this.foregroundSessionId = selected.id
+    this.foregroundSlotId = selected.id
     await this.sendStatus(this.decorateFrame(selected.lastFrame, selected))
   }
 
@@ -220,33 +245,34 @@ export class SessionAggregator {
     })
   }
 
-  private selectForeground(): TrackedSession | null {
-    if (this.focusMode === 'pinned' && this.pinnedSessionId) {
-      return this.sessions.get(this.pinnedSessionId) ?? null
+  private selectForeground(): TerminalSlot | null {
+    if (this.focusMode === 'pinned' && this.pinnedSlotId) {
+      return this.slots.get(this.pinnedSlotId) ?? null
     }
-    const attention = this.orderedSessions().find((s) => s.activity === 'needs_attention')
+    const attention = this.orderedSlots().find((s) => s.activity === 'needs_attention')
     if (attention) return attention
-    if (this.foregroundSessionId) {
-      const current = this.sessions.get(this.foregroundSessionId)
+    if (this.foregroundSlotId) {
+      const current = this.slots.get(this.foregroundSlotId)
       if (current) return current
     }
-    return this.orderedSessions()[0] ?? null
+    return this.orderedSlots()[0] ?? null
   }
 
-  private orderedSessions(): TrackedSession[] {
+  private orderedSlots(): TerminalSlot[] {
     return this.order
-      .map((id) => this.sessions.get(id))
-      .filter((s): s is TrackedSession => Boolean(s?.lastFrame))
+      .map((id) => this.slots.get(id))
+      .filter((s): s is TerminalSlot => Boolean(s?.lastFrame))
   }
 
-  private decorateFrame(base: StatusPayload, selected: TrackedSession): StatusPayload {
+  private decorateFrame(base: StatusPayload, selected: TerminalSlot): StatusPayload {
     const stamped: StatusPayload = {
       ...base,
       today: { costUsd: round2(this.currentTodayCost()), sessions: this.todaySessions.size },
     }
-    const live = this.orderedSessions()
+    const live = this.orderedSlots()
     if (live.length < 2) return stamped
     const selectedIndex = live.findIndex((s) => s.id === selected.id) + 1
+    const names = this.displayNames(live)
     return {
       ...stamped,
       focus: { mode: this.focusMode, index: selectedIndex, total: live.length },
@@ -262,16 +288,28 @@ export class SessionAggregator {
         ...live.slice(0, 7).map((s, i) => ({
           index: i + 1,
           id: s.id,
-          name: this.sessionName(s),
+          name: names.get(s.id) ?? this.sessionName(s),
           activity: s.activity,
           selected: s.id === selected.id,
-          pinned: this.focusMode === 'pinned' && this.pinnedSessionId === s.id,
+          pinned: this.focusMode === 'pinned' && this.pinnedSlotId === s.id,
         })),
       ],
     }
   }
 
-  private sessionName(s: TrackedSession): string {
+  private displayNames(slots: TerminalSlot[]): Map<string, string> {
+    const seen = new Map<string, number>()
+    const out = new Map<string, string>()
+    for (const slot of slots) {
+      const base = this.sessionName(slot)
+      const count = (seen.get(base) ?? 0) + 1
+      seen.set(base, count)
+      out.set(slot.id, count === 1 ? base : `${base} #${count}`)
+    }
+    return out
+  }
+
+  private sessionName(s: TerminalSlot): string {
     const workspace = s.lastFrame?.workspace
     if (workspace?.worktree) return workspace.worktree.slice(0, 40)
     if (workspace?.dir) {
@@ -282,7 +320,7 @@ export class SessionAggregator {
     return shortId(s.id)
   }
 
-  private updateHistory(tracked: TrackedSession, cc: StatusLineInput, nowMs: number): void {
+  private updateHistory(tracked: TerminalSlot, cc: StatusLineInput, nowMs: number): void {
     const cost = cc.cost?.total_cost_usd
     const day = localDayKey(nowMs)
     if (day !== this.todayDay) {
@@ -310,8 +348,8 @@ export class SessionAggregator {
 
   private persist(): void {
     this.store?.save({
-      burnHistory: this.foregroundSessionId
-        ? (this.sessions.get(this.foregroundSessionId)?.burnHistory ?? [])
+      burnHistory: this.foregroundSlotId
+        ? (this.slots.get(this.foregroundSlotId)?.burnHistory ?? [])
         : [],
       todayCost: round2(this.currentTodayCost()),
       todayDay: this.todayDay,
@@ -325,7 +363,7 @@ export class SessionAggregator {
     return this.todayBaseCost + liveCost
   }
 
-  private currentBurnPerHr(tracked: TrackedSession): number {
+  private currentBurnPerHr(tracked: TerminalSlot): number {
     if (tracked.burnHistory.length === 0) return 0
     const avgPerMin = tracked.burnHistory.reduce((a, b) => a + b, 0) / tracked.burnHistory.length
     return avgPerMin * 60
