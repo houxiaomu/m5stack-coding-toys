@@ -7,7 +7,7 @@ import { makeLogger } from './logger.js'
 
 const log = makeLogger('aggregator')
 const BURN_HISTORY_MAX = 15
-const NO_PID_TTL_MS = 10 * 60_000 // fallback when shim couldn't resolve a pid
+const NO_PID_TTL_MS = 30_000 // fallback when shim couldn't resolve a pid
 const ANONYMOUS_SESSION_ID = 'anonymous'
 
 interface CostSample {

@@ -191,7 +191,7 @@ describe('SessionAggregator', () => {
     expect(sess.send.mock.calls.length).toBe(countBefore)
   })
 
-  it('falls back to long TTL when no ccPid', async () => {
+  it('expires quickly when no ccPid', async () => {
     const sess = fakeSession()
     const alivePids = new Set<number>([555])
     const agg = new SessionAggregator(
@@ -200,11 +200,11 @@ describe('SessionAggregator', () => {
       (p) => alivePids.has(p),
     )
     await agg.ingest({ session_id: 's' }, undefined, () => 1000)
-    // Before TTL expires (9 minutes): no idle frame
-    agg.checkLiveness(() => 1000 + 9 * 60_000)
+    // Before TTL expires: no idle frame
+    agg.checkLiveness(() => 1000 + 29_000)
     expect(sess.send.mock.calls.at(-1)[0].p.state).toBe('active')
-    // After TTL expires (11 minutes): idle frame sent
-    agg.checkLiveness(() => 1000 + 11 * 60_000)
+    // After TTL expires: idle frame sent
+    agg.checkLiveness(() => 1000 + 31_000)
     expect(sess.send.mock.calls.at(-1)[0].p.state).toBe('idle')
   })
 
