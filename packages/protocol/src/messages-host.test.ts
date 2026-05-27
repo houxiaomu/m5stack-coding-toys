@@ -117,6 +117,41 @@ describe('statusPayload activity', () => {
   })
 })
 
+describe('statusPayload multi-session focus metadata', () => {
+  it('accepts focus and session summaries', () => {
+    const parsed = statusPayload.parse({
+      state: 'active',
+      activity: 'working',
+      focus: { mode: 'auto', index: 2, total: 4 },
+      sessions: [
+        { index: 0, id: 'auto', name: 'AUTO', activity: 'working', auto: true },
+        { index: 1, id: 's1', name: 'm5toys', activity: 'needs_attention', selected: true },
+      ],
+    })
+
+    expect(parsed.focus).toEqual({ mode: 'auto', index: 2, total: 4 })
+    expect(parsed.sessions?.map((s) => [s.id, s.activity])).toEqual([
+      ['auto', 'working'],
+      ['s1', 'needs_attention'],
+    ])
+  })
+
+  it('rejects invalid focus modes and session activity values', () => {
+    expect(
+      statusPayload.safeParse({
+        state: 'active',
+        focus: { mode: 'manual', index: 1, total: 2 },
+      }).success,
+    ).toBe(false)
+    expect(
+      statusPayload.safeParse({
+        state: 'active',
+        sessions: [{ index: 1, id: 's1', name: 'm5toys', activity: 'blocked' }],
+      }).success,
+    ).toBe(false)
+  })
+})
+
 describe('tapPayload', () => {
   it('accepts coordinates and defaults duration', () => {
     expect(tapPayload.parse({ x: 160, y: 120 })).toEqual({

@@ -20,11 +20,24 @@ export const helloAckPayload = z.object({
 
 export const notifyAckPayload = z.object({}).strict()
 
-export const deviceEventPayload = z
+const legacyDeviceEventPayload = z
   .object({
     kind: z.enum(['battery', 'button', 'shake']),
   })
   .passthrough()
+
+const focusDeviceEventPayload = z.discriminatedUnion('target', [
+  z.object({ kind: z.literal('focus'), target: z.literal('auto') }).strict(),
+  z
+    .object({
+      kind: z.literal('focus'),
+      target: z.literal('session'),
+      sessionId: z.string().min(1),
+    })
+    .strict(),
+])
+
+export const deviceEventPayload = z.union([legacyDeviceEventPayload, focusDeviceEventPayload])
 
 export const pongPayload = z.object({}).strict()
 

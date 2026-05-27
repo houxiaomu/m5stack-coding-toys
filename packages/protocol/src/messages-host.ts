@@ -5,6 +5,16 @@ const capsSchema = z.array(z.enum(CAPS))
 const pct = z.number().min(0).max(100)
 const nonNegInt = z.number().int().nonnegative()
 const epochSec = z.number().int().nonnegative()
+const focusMode = z.enum(['auto', 'pinned'])
+const sessionSummary = z.object({
+  index: nonNegInt,
+  id: z.string().min(1),
+  name: z.string().min(1).max(40),
+  activity: z.enum(ACTIVITY),
+  selected: z.boolean().optional(),
+  pinned: z.boolean().optional(),
+  auto: z.boolean().optional(),
+})
 
 export const helloPayload = z.object({
   caps: capsSchema,
@@ -49,6 +59,15 @@ export const statusPayload = z.object({
   weekly: z.object({ usedPct: pct, resetAt: epochSec }).partial().optional(),
   today: z.object({ costUsd: z.number().nonnegative(), sessions: nonNegInt }).partial().optional(),
   burnHistory: z.array(z.number().nonnegative()).max(60).optional(),
+  focus: z
+    .object({
+      mode: focusMode,
+      index: nonNegInt,
+      total: nonNegInt,
+    })
+    .partial()
+    .optional(),
+  sessions: z.array(sessionSummary).max(8).optional(),
   workspace: z.object({ dir: z.string(), worktree: z.string() }).partial().optional(),
   git: z
     .object({
