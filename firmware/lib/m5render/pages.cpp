@@ -378,7 +378,7 @@ static void drawSessions(const StatusModel& m, Canvas& c) {
   c.fillScreen(color::bg);
   renderHeader(m, c);
 
-  c.text("SESSIONS", 10, 42, Font::Label, Align::TopLeft, color::mute);
+  c.text("TERMINALS", 10, 42, Font::Label, Align::TopLeft, color::mute);
   if (m.sessionN <= 0) {
     c.text(kDash, 10, 66, Font::Body, Align::TopLeft, color::ink);
     renderPageDots(PageId::Sessions, c);

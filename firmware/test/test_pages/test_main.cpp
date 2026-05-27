@@ -213,6 +213,7 @@ void test_sessions_page_renders_rows() {
   strcpy(m.sessions[1].name, "repo-a");
   m.sessions[1].activity = Activity::NeedsAttention;
   MockCanvas c; renderPage(PageId::Sessions, m, c);
+  TEST_ASSERT_TRUE(c.called("text", "TERMINALS"));
   TEST_ASSERT_TRUE(c.called("text", "AUTO"));
   TEST_ASSERT_TRUE(c.called("text", "repo-a"));
   TEST_ASSERT_TRUE(c.called("text", "NEEDS YOU"));
