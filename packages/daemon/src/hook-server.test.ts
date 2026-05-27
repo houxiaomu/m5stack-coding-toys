@@ -94,4 +94,16 @@ describe('HookServer hook events', () => {
     expect(seen).toEqual(['Stop'])
     expect(JSON.parse(ack)).toEqual({ ok: true })
   })
+
+  it('forwards hook event sessionId to the hook-event handler', async () => {
+    const path = sockPath()
+    srv = new HookServer(path)
+    const seen: Array<{ event: string; sessionId?: string }> = []
+    srv.setHookEventHandler((event, meta) => seen.push({ event, sessionId: meta.sessionId }))
+    await srv.listen()
+
+    const raw = await rpc(path, { event: 'Notification', sessionId: 's2' })
+    expect(JSON.parse(raw)).toEqual({ ok: true })
+    expect(seen).toEqual([{ event: 'Notification', sessionId: 's2' }])
+  })
 })

@@ -25,7 +25,7 @@ export class HookServer {
     | ((cc: Record<string, unknown>, meta: { ccPid?: number; sessionId?: string }) => void)
     | null = null
   private onActivity: (() => void) | null = null
-  private onHookEvent: ((event: string) => void) | null = null
+  private onHookEvent: ((event: string, meta: { sessionId?: string }) => void) | null = null
 
   constructor(private readonly socketPath: string) {}
 
@@ -33,7 +33,7 @@ export class HookServer {
     this.onActivity = fn
   }
 
-  setHookEventHandler(fn: (event: string) => void): void {
+  setHookEventHandler(fn: (event: string, meta: { sessionId?: string }) => void): void {
     this.onHookEvent = fn
   }
 
@@ -116,7 +116,10 @@ export class HookServer {
     }
     const ev = (msg as { event?: unknown }).event
     if (typeof ev === 'string') {
-      this.onHookEvent?.(ev)
+      const sessionId = (msg as { sessionId?: unknown }).sessionId
+      this.onHookEvent?.(ev, {
+        sessionId: typeof sessionId === 'string' ? sessionId : undefined,
+      })
       sock.end(`${JSON.stringify({ ok: true })}\n`)
       return
     }
