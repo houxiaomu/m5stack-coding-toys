@@ -162,7 +162,8 @@ void App::handleLine(const char* line, std::size_t len) {
             send(line.c_str(), line.size());
             return;
         }
-        handleTouchTapAction(now());
+        const uint16_t region = y < (board_->display->height() / 2) ? 0 : 1;
+        handleTouchTapAction(region, now());
         std::string line = m5proto::encode_tap_ack(env.id, 0, true, nullptr);
         send(line.c_str(), line.size());
         return;
@@ -191,12 +192,33 @@ void App::pollInput() {
     m5hal::InputEvent e{};
     if (!board_->input->poll(e)) return;
     if (e.kind != m5hal::InputEvent::TouchTap) return;
-    handleTouchTapAction(e.t_ms);
+    handleTouchTapAction(e.code, e.t_ms);
 }
 
-void App::handleTouchTapAction(uint32_t) {
+void App::handleTouchTapAction(uint16_t code, uint32_t t_ms) {
     if (link_ != LinkState::Live) return;  // paging only on status pages
-    page_ = static_cast<PageId>((static_cast<int>(page_) + 1) % kPageCount);
+    if (page_ == PageId::Sessions && hasSessionsPage(model_)) {
+        handleSessionsTap(code, t_ms);
+        return;
+    }
+    const int pages = pageCountFor(model_);
+    page_ = static_cast<PageId>((static_cast<int>(page_) + 1) % pages);
+    dirty_ = true;
+}
+
+void App::handleSessionsTap(uint16_t code, uint32_t t_ms) {
+    if (model_.sessionN <= 0) return;
+    if (code == 0) {
+        model_.pickerIndex = (model_.pickerIndex + 1) % model_.sessionN;
+        dirty_ = true;
+        return;
+    }
+    const auto& s = model_.sessions[model_.pickerIndex];
+    std::string line = s.autoMode
+        ? m5proto::encode_focus_event_auto(t_ms)
+        : m5proto::encode_focus_event_session(t_ms, s.id);
+    send(line.c_str(), line.size());
+    page_ = PageId::Overview;
     dirty_ = true;
 }
 
