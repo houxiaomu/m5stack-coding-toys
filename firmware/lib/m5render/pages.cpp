@@ -49,8 +49,28 @@ uint8_t badgeBrightnessFor(Activity a, uint32_t nowMs) {
   return static_cast<uint8_t>(floorB + (span * up) / half);
 }
 
-// ── shared header (top bar across all 4 data pages) ─────────────────────────
-void renderHeader(const StatusModel& m, Canvas& c) {
+static const char* basenameOf(const char* path);
+
+static const char* selectedSessionName(const StatusModel& m) {
+  for (int i = 0; i < m.sessionN; ++i) {
+    const auto& s = m.sessions[i];
+    if (s.autoMode) continue;
+    if ((s.selected || s.pinned) && s.name[0]) return s.name;
+  }
+  return nullptr;
+}
+
+static const char* headerTitle(PageId id, const StatusModel& m) {
+  if (id == PageId::Sessions) return "TERMINALS";
+  if (const char* selected = selectedSessionName(m)) return selected;
+  if (m.wsWorktree[0]) return m.wsWorktree;
+  const char* base = basenameOf(m.wsDir);
+  if (std::strcmp(base, kDash) != 0) return base;
+  return "Claude";
+}
+
+// ── shared header (top bar across data pages) ───────────────────────────────
+void renderHeader(PageId id, const StatusModel& m, Canvas& c) {
   M5CT_DBG("hdr start");
   c.fillRoundRect(0, 0, 320, 34, 0, color::bg);  // header band
   M5CT_DBG("hdr fillRoundRect ok");
@@ -58,11 +78,9 @@ void renderHeader(const StatusModel& m, Canvas& c) {
   // Pages only render while Live, so the dot is always the active accent.
   c.fillCircle(15, 17, 4, color::accent);
 
-  // Model name.
-  const char* model = m.modelShort[0] ? m.modelShort : "Claude";
-  c.text(model, 26, 17, Font::Title, Align::MiddleLeft, color::ink);
+  c.text(headerTitle(id, m), 26, 17, Font::Title, Align::MiddleLeft, color::ink);
 
-  if (m.hasFocus && m.focusTotal >= 2) {
+  if (id != PageId::Sessions && m.hasFocus && m.focusTotal >= 2) {
     char focus[20];
     snprintf(focus, sizeof(focus), "%s %d/%d",
              m.focusPinned ? "PINNED" : "AUTO", m.focusIndex, m.focusTotal);
@@ -83,9 +101,9 @@ void renderHeader(const StatusModel& m, Canvas& c) {
   M5CT_DBG("hdr end");
 }
 
-// ── page indicator overlay (active page among kPageCount) ───────────────────
-void renderPageDots(PageId active, Canvas& c) {
-  const int gap = 6, r = 2, total = kPageCount;
+// ── footer: date + page indicator + clock ───────────────────────────────────
+void renderPageDots(PageId active, int total, Canvas& c) {
+  const int gap = 6, r = 2;
   const int totalW = (total - 1) * gap + total * (r * 2);
   int x = (320 - totalW) / 2 + r;
   int y = 232;
@@ -94,6 +112,15 @@ void renderPageDots(PageId active, Canvas& c) {
                  i == static_cast<int>(active) ? color::ink : color::cardLine);
     x += r * 2 + gap;
   }
+}
+
+void renderFooter(PageId active, int total, const DeviceInfo& d, Canvas& c) {
+  c.drawHLine(10, 215, 300, color::hairline);
+  c.text(d.date[0] ? d.date : "--", 10, 226, Font::Label,
+         Align::MiddleLeft, color::mute);
+  renderPageDots(active, total, c);
+  c.text(d.clock[0] ? d.clock : "--:--", 310, 226, Font::Label,
+         Align::MiddleRight, color::ink2);
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -174,18 +201,18 @@ static void formatResetIn(char* out, size_t cap, int minutes) {
 }
 
 // ── PAGE · Overview ─────────────────────────────────────────────────────────
-static void drawOverview(const StatusModel& m, Canvas& c) {
+static void drawOverview(const StatusModel& m, const DeviceInfo& d, Canvas& c) {
   M5CT_DBG("ov start");
   c.fillScreen(color::bg);
   M5CT_DBG("ov fillScreen ok");
-  renderHeader(m, c);
+  renderHeader(PageId::Overview, m, c);
   M5CT_DBG("ov header ok");
 
   // workspace strip
   c.text("$", 10, 40, Font::Label, Align::TopLeft, color::mute);
   c.text(m.wsDir[0] ? m.wsDir : kDash, 18, 40, Font::Label, Align::TopLeft, color::ink2);
 
-  char buf[32], sub1[40];
+  char buf[32], sub1[40], ctxLabel[40];
   // CONTEXT tile
   snprintf(buf, sizeof(buf), "%d%%", m.ctxUsedPct);
   // Only show the "/ Nk" denominator when the host actually sent a limit;
@@ -195,7 +222,11 @@ static void drawOverview(const StatusModel& m, Canvas& c) {
              int(m.ctxTokens / 1000), int(m.ctxLimit / 1000));
   else
     snprintf(sub1, sizeof(sub1), "%dk tok", int(m.ctxTokens / 1000));
-  drawTile(c, 10, 56, 150, 74, "CONTEXT", m.hasContext, buf, sub1,
+  if (m.modelShort[0])
+    snprintf(ctxLabel, sizeof(ctxLabel), "CONTEXT / %s", m.modelShort);
+  else
+    snprintf(ctxLabel, sizeof(ctxLabel), "CONTEXT");
+  drawTile(c, 10, 56, 150, 74, ctxLabel, m.hasContext, buf, sub1,
            m.ctxUsedPct, m.hasContext && (m.exceeds200k || m.ctxUsedPct >= 80));
 
   // 5H BLOCK tile
@@ -223,20 +254,20 @@ static void drawOverview(const StatusModel& m, Canvas& c) {
   drawTile(c, 165, 135, 150, 74, "DIFF", m.hasGit, diff, gs, -1, false);
   M5CT_DBG("ov tiles ok");
 
-  renderPageDots(PageId::Overview, c);
+  renderFooter(PageId::Overview, pageCountFor(m), d, c);
   M5CT_DBG("ov dots ok");
 }
 
 // ── PAGE · Cost ──────────────────────────────────────────────────────────────
-static void drawCost(const StatusModel& m, Canvas& c) {
+static void drawCost(const StatusModel& m, const DeviceInfo& d, Canvas& c) {
   c.fillScreen(color::bg);
-  renderHeader(m, c);
+  renderHeader(PageId::Cost, m, c);
 
   c.text("THIS SESSION", 10, 42, Font::Label, Align::TopLeft, color::mute);
 
   if (!m.hasCost) {
     c.text(kDash, 10, 54, Font::BigNumber, Align::TopLeft, color::ink);
-    renderPageDots(PageId::Cost, c);
+    renderFooter(PageId::Cost, pageCountFor(m), d, c);
     return;
   }
 
@@ -266,13 +297,13 @@ static void drawCost(const StatusModel& m, Canvas& c) {
   row("TODAY TOTAL",  m.hasToday,  tBuf);
   row("WEEKLY", m.hasWeekly, wBuf);
 
-  renderPageDots(PageId::Cost, c);
+  renderFooter(PageId::Cost, pageCountFor(m), d, c);
 }
 
 // ── PAGE · Limits (single aggregate weekly) ──────────────────────────────────
-static void drawLimits(const StatusModel& m, Canvas& c) {
+static void drawLimits(const StatusModel& m, const DeviceInfo& d, Canvas& c) {
   c.fillScreen(color::bg);
-  renderHeader(m, c);
+  renderHeader(PageId::Limits, m, c);
 
   int y = 44;
   auto bar = [&](const char* label, bool has, int pct, bool hero, bool warn) {
@@ -296,18 +327,18 @@ static void drawLimits(const StatusModel& m, Canvas& c) {
   bar("5H BLOCK", m.hasBlock,   m.blockPct,   false, m.hasBlock && m.blockPct >= 80);
   bar("WEEKLY",   m.hasWeekly,  m.weeklyPct,  false, false);
 
-  renderPageDots(PageId::Limits, c);
+  renderFooter(PageId::Limits, pageCountFor(m), d, c);
 }
 
 // ── PAGE · Workspace ─────────────────────────────────────────────────────────
-static void drawWorkspace(const StatusModel& m, Canvas& c) {
+static void drawWorkspace(const StatusModel& m, const DeviceInfo& d, Canvas& c) {
   c.fillScreen(color::bg);
-  renderHeader(m, c);
+  renderHeader(PageId::Workspace, m, c);
 
   if (!m.hasGit) {
     c.text(m.wsDir[0] ? m.wsDir : kDash, 10, 42, Font::Title, Align::TopLeft, color::ink);
     c.text(kDash, 10, 90, Font::Body, Align::TopLeft, color::ink2);
-    renderPageDots(PageId::Workspace, c);
+    renderFooter(PageId::Workspace, pageCountFor(m), d, c);
     return;
   }
 
@@ -352,7 +383,7 @@ static void drawWorkspace(const StatusModel& m, Canvas& c) {
     c.text("Top", 10, y, Font::Label, Align::TopLeft, color::mute);
     y += 16;
     if (m.topFileN > 0) {
-      const int n = m.topFileN > 3 ? 3 : m.topFileN;
+      const int n = m.topFileN > 2 ? 2 : m.topFileN;
       for (int i = 0; i < n; ++i) {
         char churn[24];
         snprintf(churn, sizeof(churn), "+%d / -%d",
@@ -380,23 +411,22 @@ static void drawWorkspace(const StatusModel& m, Canvas& c) {
     }
   }
 
-  renderPageDots(PageId::Workspace, c);
+  renderFooter(PageId::Workspace, pageCountFor(m), d, c);
 }
 
 // ── PAGE · Sessions ─────────────────────────────────────────────────────────
-static void drawSessions(const StatusModel& m, Canvas& c) {
+static void drawSessions(const StatusModel& m, const DeviceInfo& d, Canvas& c) {
   c.fillScreen(color::bg);
-  renderHeader(m, c);
+  renderHeader(PageId::Sessions, m, c);
 
-  c.text("TERMINALS", 10, 42, Font::Label, Align::TopLeft, color::mute);
   if (m.sessionN <= 0) {
-    c.text(kDash, 10, 66, Font::Body, Align::TopLeft, color::ink);
-    renderPageDots(PageId::Sessions, c);
+    c.text(kDash, 10, 58, Font::Body, Align::TopLeft, color::ink);
+    renderFooter(PageId::Sessions, pageCountFor(m), d, c);
     return;
   }
 
   const int maxRows = m.sessionN < 5 ? m.sessionN : 5;
-  int y = 62;
+  int y = 48;
   for (int i = 0; i < maxRows; ++i) {
     const auto& s = m.sessions[i];
     const bool cursor = i == m.pickerIndex;
@@ -410,7 +440,7 @@ static void drawSessions(const StatusModel& m, Canvas& c) {
     y += 31;
   }
 
-  renderPageDots(PageId::Sessions, c);
+  renderFooter(PageId::Sessions, pageCountFor(m), d, c);
 }
 
 // ── PAGE · Waiting (uses DeviceInfo, NOT StatusModel) ───────────────────────
@@ -452,13 +482,13 @@ void renderWaiting(const DeviceInfo& d, bool linked, Canvas& c) {
 }
 
 // ── router ───────────────────────────────────────────────────────────────────
-void renderPage(PageId id, const StatusModel& m, Canvas& c) {
+void renderPage(PageId id, const StatusModel& m, const DeviceInfo& d, Canvas& c) {
   switch (id) {
-    case PageId::Overview:  drawOverview(m, c);  break;
-    case PageId::Cost:      drawCost(m, c);      break;
-    case PageId::Limits:    drawLimits(m, c);    break;
-    case PageId::Workspace: drawWorkspace(m, c); break;
-    case PageId::Sessions:  drawSessions(m, c);  break;
+    case PageId::Overview:  drawOverview(m, d, c);  break;
+    case PageId::Cost:      drawCost(m, d, c);      break;
+    case PageId::Limits:    drawLimits(m, d, c);    break;
+    case PageId::Workspace: drawWorkspace(m, d, c); break;
+    case PageId::Sessions:  drawSessions(m, d, c);  break;
   }
 }
 

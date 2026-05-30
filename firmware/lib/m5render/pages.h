@@ -21,10 +21,11 @@ uint8_t badgeBrightnessFor(Activity a, uint32_t nowMs);
 
 // Device-agnostic page renderers. Each draws using only Canvas primitives and
 // semantic Font tiers; they never touch device GFX directly.
-void renderPage(PageId id, const StatusModel& m, Canvas& c);
+void renderPage(PageId id, const StatusModel& m, const DeviceInfo& d, Canvas& c);
 // `linked` = host/daemon link is alive but no live Claude session yet.
 void renderWaiting(const DeviceInfo& d, bool linked, Canvas& c);
-void renderHeader(const StatusModel& m, Canvas& c);   // shared top bar
-void renderPageDots(PageId active, Canvas& c);         // page indicator
+void renderHeader(PageId id, const StatusModel& m, Canvas& c);  // shared top bar
+void renderPageDots(PageId active, int total, Canvas& c);       // page indicator
+void renderFooter(PageId active, int total, const DeviceInfo& d, Canvas& c);
 
 }  // namespace m5render

@@ -244,10 +244,10 @@ void App::render() {
     if (!dirty_) return;
     M5CT_DBG("render link=%d page=%d", static_cast<int>(link_), static_cast<int>(page_));
     canvas_.begin();
+    refreshDeviceInfo();
     if (link_ == LinkState::Live) {
-        renderPage(page_, model_, canvas_);
+        renderPage(page_, model_, dev_, canvas_);
     } else {
-        refreshDeviceInfo();
         renderWaiting(dev_, link_ == LinkState::Linked, canvas_);
     }
     canvas_.end();

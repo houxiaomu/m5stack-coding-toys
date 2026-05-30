@@ -17,14 +17,14 @@ static DeviceInfo testDevice() {
 
 void test_overview_renders_context_tile_with_bar() {
   StatusModel m; m.hasContext = true; m.ctxUsedPct = 47;
-  MockCanvas c; renderPage(PageId::Overview, m, c);
+  MockCanvas c; renderPage(PageId::Overview, m, testDevice(), c);
   TEST_ASSERT_TRUE(c.called("text", "CONTEXT"));
   TEST_ASSERT_TRUE(c.calledPrefix("microBar"));
 }
 
 void test_overview_degrades_when_no_context() {
   StatusModel m; m.hasContext = false;
-  MockCanvas c; renderPage(PageId::Overview, m, c);
+  MockCanvas c; renderPage(PageId::Overview, m, testDevice(), c);
   TEST_ASSERT_TRUE(c.called("text", "-"));  // placeholder, no crash
 }
 
@@ -36,7 +36,7 @@ void test_overview_diff_uses_git_diff_stats() {
   m.diffLinesRemoved = 24;
   m.linesAdded = 1;
   m.linesRemoved = 2;
-  MockCanvas c; renderPage(PageId::Overview, m, c);
+  MockCanvas c; renderPage(PageId::Overview, m, testDevice(), c);
   TEST_ASSERT_TRUE(c.called("text", "+128 / -24"));
 }
 
@@ -44,7 +44,7 @@ void test_overview_block_reset_formats_hours() {
   StatusModel m;
   m.hasBlock = true;
   m.blockResetInMin = 65;
-  MockCanvas c; renderPage(PageId::Overview, m, c);
+  MockCanvas c; renderPage(PageId::Overview, m, testDevice(), c);
   TEST_ASSERT_TRUE(c.called("text", "resets 1h5m"));
 }
 
@@ -52,13 +52,13 @@ void test_overview_block_reset_keeps_minutes_under_one_hour() {
   StatusModel m;
   m.hasBlock = true;
   m.blockResetInMin = 59;
-  MockCanvas c; renderPage(PageId::Overview, m, c);
+  MockCanvas c; renderPage(PageId::Overview, m, testDevice(), c);
   TEST_ASSERT_TRUE(c.called("text", "resets 59m"));
 }
 
 void test_limits_uses_single_weekly_row() {
   StatusModel m; m.hasWeekly = true; m.weeklyPct = 18;
-  MockCanvas c; renderPage(PageId::Limits, m, c);
+  MockCanvas c; renderPage(PageId::Limits, m, testDevice(), c);
   TEST_ASSERT_TRUE(c.called("text", "WEEKLY"));
   TEST_ASSERT_FALSE(c.called("text", "SONNET WK"));  // per-model split removed
   TEST_ASSERT_FALSE(c.called("text", "OPUS WK"));
@@ -69,7 +69,7 @@ void test_limits_renders_three_rows() {
   m.hasContext = true; m.ctxUsedPct = 47;
   m.hasBlock = true; m.blockPct = 22;
   m.hasWeekly = true; m.weeklyPct = 18;
-  MockCanvas c; renderPage(PageId::Limits, m, c);
+  MockCanvas c; renderPage(PageId::Limits, m, testDevice(), c);
   TEST_ASSERT_TRUE(c.called("text", "CONTEXT"));
   TEST_ASSERT_TRUE(c.called("text", "5H BLOCK"));
   TEST_ASSERT_TRUE(c.called("text", "WEEKLY"));
@@ -89,25 +89,25 @@ void test_cost_draws_sparkline_when_burn_history_present() {
   StatusModel m;
   m.hasCost = true; m.costSessionUsd = 1.23f;
   m.burnN = 5; for (int i = 0; i < 5; ++i) m.burn[i] = float(i + 1);
-  MockCanvas c; renderPage(PageId::Cost, m, c);
+  MockCanvas c; renderPage(PageId::Cost, m, testDevice(), c);
   TEST_ASSERT_TRUE(c.called("sparkline", "5"));
 }
 
 void test_cost_no_sparkline_when_no_history() {
   StatusModel m; m.hasCost = true; m.burnN = 0;
-  MockCanvas c; renderPage(PageId::Cost, m, c);
+  MockCanvas c; renderPage(PageId::Cost, m, testDevice(), c);
   TEST_ASSERT_FALSE(c.calledPrefix("sparkline"));
 }
 
 void test_cost_degrades_when_no_cost() {
   StatusModel m; m.hasCost = false;
-  MockCanvas c; renderPage(PageId::Cost, m, c);
+  MockCanvas c; renderPage(PageId::Cost, m, testDevice(), c);
   TEST_ASSERT_TRUE(c.called("text", "-"));
 }
 
 void test_workspace_degrades_when_no_git() {
   StatusModel m; m.hasGit = false;
-  MockCanvas c; renderPage(PageId::Workspace, m, c);
+  MockCanvas c; renderPage(PageId::Workspace, m, testDevice(), c);
   TEST_ASSERT_TRUE(c.called("text", "-"));
 }
 
@@ -129,7 +129,7 @@ void test_workspace_dirty_renders_dense_diff() {
   m.topFiles[0].added = 84;
   m.topFiles[0].removed = 12;
 
-  MockCanvas c; renderPage(PageId::Workspace, m, c);
+  MockCanvas c; renderPage(PageId::Workspace, m, testDevice(), c);
 
   TEST_ASSERT_TRUE(c.called("text", "dirty"));
   TEST_ASSERT_TRUE(c.called("text", "Files"));
@@ -151,7 +151,7 @@ void test_workspace_clean_renders_status_and_commit() {
   strcpy(m.lastCommitMsg, "densify workspace page");
   m.lastCommitMins = 12;
 
-  MockCanvas c; renderPage(PageId::Workspace, m, c);
+  MockCanvas c; renderPage(PageId::Workspace, m, testDevice(), c);
 
   TEST_ASSERT_TRUE(c.called("text", "clean"));
   TEST_ASSERT_TRUE(c.called("text", "Status"));
@@ -181,26 +181,26 @@ void test_blend565_endpoints_and_midpoint() {
 
 void test_header_badge_shows_working_by_default() {
   StatusModel m;  // default activity = Working
-  MockCanvas c; renderHeader(m, c);
+  MockCanvas c; renderHeader(PageId::Overview, m, c);
   TEST_ASSERT_TRUE(c.called("text", "WORKING"));
 }
 
 void test_header_badge_shows_your_turn_when_awaiting() {
   StatusModel m; m.activity = Activity::AwaitingInput;
-  MockCanvas c; renderHeader(m, c);
+  MockCanvas c; renderHeader(PageId::Overview, m, c);
   TEST_ASSERT_TRUE(c.called("text", "YOUR TURN"));
   TEST_ASSERT_FALSE(c.called("text", "WORKING"));
 }
 
 void test_header_badge_shows_needs_you_when_attention() {
   StatusModel m; m.activity = Activity::NeedsAttention;
-  MockCanvas c; renderHeader(m, c);
+  MockCanvas c; renderHeader(PageId::Overview, m, c);
   TEST_ASSERT_TRUE(c.called("text", "NEEDS YOU"));
 }
 
 void test_header_badge_never_shows_ctx_high() {
   StatusModel m; m.hasContext = true; m.ctxUsedPct = 95; m.exceeds200k = true;
-  MockCanvas c; renderHeader(m, c);
+  MockCanvas c; renderHeader(PageId::Overview, m, c);
   TEST_ASSERT_FALSE(c.called("text", "CTX HIGH"));
 }
 
@@ -208,7 +208,7 @@ void test_cost_rows_degrade_when_no_today_or_weekly() {
   StatusModel m;
   m.hasCost = true; m.costSessionUsd = 1.23f;
   m.hasToday = false; m.hasWeekly = false;
-  MockCanvas c; renderPage(PageId::Cost, m, c);
+  MockCanvas c; renderPage(PageId::Cost, m, testDevice(), c);
   // Row labels still render; their values fall back to the dash placeholder.
   TEST_ASSERT_TRUE(c.called("text", "TODAY TOTAL"));
   TEST_ASSERT_TRUE(c.called("text", "WEEKLY"));
@@ -217,7 +217,7 @@ void test_cost_rows_degrade_when_no_today_or_weekly() {
 
 void test_header_status_dot_drawn() {
   StatusModel m;
-  MockCanvas c; renderHeader(m, c);
+  MockCanvas c; renderHeader(PageId::Overview, m, c);
   TEST_ASSERT_TRUE(c.calledPrefix("fillCircle"));
 }
 
@@ -227,7 +227,7 @@ void test_header_shows_focus_label_when_multi_session() {
   m.focusPinned = false;
   m.focusIndex = 2;
   m.focusTotal = 4;
-  MockCanvas c; renderHeader(m, c);
+  MockCanvas c; renderHeader(PageId::Overview, m, c);
   TEST_ASSERT_TRUE(c.called("text", "AUTO 2/4"));
 }
 
@@ -237,7 +237,7 @@ void test_header_hides_focus_label_for_single_session() {
   m.focusPinned = false;
   m.focusIndex = 1;
   m.focusTotal = 1;
-  MockCanvas c; renderHeader(m, c);
+  MockCanvas c; renderHeader(PageId::Overview, m, c);
   TEST_ASSERT_FALSE(c.called("text", "AUTO 1/1"));
 }
 
@@ -252,6 +252,19 @@ void test_header_uses_selected_terminal_name_not_model() {
   MockCanvas c; renderHeader(PageId::Overview, m, c);
   TEST_ASSERT_TRUE(c.called("text", "fullfs"));
   TEST_ASSERT_FALSE(c.called("text", "Opus 4.8"));
+}
+
+void test_header_skips_auto_row_for_terminal_name() {
+  StatusModel m;
+  m.sessionN = 2;
+  strcpy(m.sessions[0].name, "AUTO");
+  m.sessions[0].autoMode = true;
+  m.sessions[0].selected = true;
+  strcpy(m.sessions[1].name, "fullfs");
+  m.sessions[1].selected = true;
+  MockCanvas c; renderHeader(PageId::Overview, m, c);
+  TEST_ASSERT_TRUE(c.called("text", "fullfs"));
+  TEST_ASSERT_FALSE(c.called("text", "AUTO"));
 }
 
 void test_header_falls_back_to_worktree_name() {
@@ -312,7 +325,7 @@ void test_sessions_page_renders_rows() {
   m.sessions[0].autoMode = true;
   strcpy(m.sessions[1].name, "repo-a");
   m.sessions[1].activity = Activity::NeedsAttention;
-  MockCanvas c; renderPage(PageId::Sessions, m, c);
+  MockCanvas c; renderPage(PageId::Sessions, m, testDevice(), c);
   TEST_ASSERT_TRUE(c.called("text", "TERMINALS"));
   TEST_ASSERT_TRUE(c.called("text", "AUTO"));
   TEST_ASSERT_TRUE(c.called("text", "repo-a"));
@@ -320,13 +333,13 @@ void test_sessions_page_renders_rows() {
 }
 
 void test_page_dots_draws_four() {
-  MockCanvas c; renderPageDots(PageId::Overview, c);
+  MockCanvas c; renderPageDots(PageId::Overview, kPageCount, c);
   TEST_ASSERT_EQUAL(kPageCount, c.countPrefix("fillCircle"));
 }
 
 void test_overview_renders_header_and_dots() {
   StatusModel m; m.hasContext = true; m.ctxUsedPct = 47;
-  MockCanvas c; renderPage(PageId::Overview, m, c);
+  MockCanvas c; renderPage(PageId::Overview, m, testDevice(), c);
   // header status dot + page dots all use fillCircle; at least the 4 page dots.
   TEST_ASSERT_TRUE(c.countPrefix("fillCircle") >= kPageCount);
 }
@@ -388,6 +401,7 @@ void setup() {
   RUN_TEST(test_header_shows_focus_label_when_multi_session);
   RUN_TEST(test_header_hides_focus_label_for_single_session);
   RUN_TEST(test_header_uses_selected_terminal_name_not_model);
+  RUN_TEST(test_header_skips_auto_row_for_terminal_name);
   RUN_TEST(test_header_falls_back_to_worktree_name);
   RUN_TEST(test_sessions_header_is_terminals);
   RUN_TEST(test_overview_context_label_includes_model);
