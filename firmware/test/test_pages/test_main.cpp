@@ -7,6 +7,14 @@
 
 using namespace m5render;
 
+static DeviceInfo testDevice() {
+  DeviceInfo d;
+  strcpy(d.date, "2026-05-30");
+  strcpy(d.clock, "18:14");
+  d.batteryPct = 78;
+  return d;
+}
+
 void test_overview_renders_context_tile_with_bar() {
   StatusModel m; m.hasContext = true; m.ctxUsedPct = 47;
   MockCanvas c; renderPage(PageId::Overview, m, c);
@@ -233,6 +241,70 @@ void test_header_hides_focus_label_for_single_session() {
   TEST_ASSERT_FALSE(c.called("text", "AUTO 1/1"));
 }
 
+void test_header_uses_selected_terminal_name_not_model() {
+  StatusModel m;
+  strcpy(m.modelShort, "Opus 4.8");
+  m.sessionN = 2;
+  strcpy(m.sessions[0].name, "AUTO");
+  m.sessions[0].autoMode = true;
+  strcpy(m.sessions[1].name, "fullfs");
+  m.sessions[1].selected = true;
+  MockCanvas c; renderHeader(PageId::Overview, m, c);
+  TEST_ASSERT_TRUE(c.called("text", "fullfs"));
+  TEST_ASSERT_FALSE(c.called("text", "Opus 4.8"));
+}
+
+void test_header_falls_back_to_worktree_name() {
+  StatusModel m;
+  strcpy(m.modelShort, "Opus 4.8");
+  strcpy(m.wsWorktree, "m5toys");
+  MockCanvas c; renderHeader(PageId::Cost, m, c);
+  TEST_ASSERT_TRUE(c.called("text", "m5toys"));
+  TEST_ASSERT_FALSE(c.called("text", "Opus 4.8"));
+}
+
+void test_sessions_header_is_terminals() {
+  StatusModel m;
+  strcpy(m.modelShort, "Opus 4.8");
+  strcpy(m.wsWorktree, "m5toys");
+  MockCanvas c; renderHeader(PageId::Sessions, m, c);
+  TEST_ASSERT_TRUE(c.called("text", "TERMINALS"));
+  TEST_ASSERT_FALSE(c.called("text", "Opus 4.8"));
+}
+
+void test_overview_context_label_includes_model() {
+  StatusModel m;
+  m.hasContext = true;
+  m.ctxUsedPct = 47;
+  strcpy(m.modelShort, "Opus 4.8");
+  MockCanvas c; renderPage(PageId::Overview, m, testDevice(), c);
+  TEST_ASSERT_TRUE(c.called("text", "CONTEXT / Opus 4.8"));
+}
+
+void test_overview_context_label_omits_missing_model() {
+  StatusModel m;
+  m.hasContext = true;
+  m.ctxUsedPct = 47;
+  MockCanvas c; renderPage(PageId::Overview, m, testDevice(), c);
+  TEST_ASSERT_TRUE(c.called("text", "CONTEXT"));
+  TEST_ASSERT_FALSE(c.called("text", "CONTEXT / "));
+}
+
+void test_live_footer_renders_date_time_and_page_dots() {
+  StatusModel m;
+  MockCanvas c; renderPage(PageId::Overview, m, testDevice(), c);
+  TEST_ASSERT_TRUE(c.called("text", "2026-05-30"));
+  TEST_ASSERT_TRUE(c.called("text", "18:14"));
+  TEST_ASSERT_TRUE(c.countPrefix("fillCircle") >= kPageCount + 1);
+}
+
+void test_live_footer_uses_five_dots_when_sessions_page_exists() {
+  StatusModel m;
+  m.sessionN = 3;
+  MockCanvas c; renderPage(PageId::Sessions, m, testDevice(), c);
+  TEST_ASSERT_TRUE(c.countPrefix("fillCircle") >= kMaxPageCount + 1);
+}
+
 void test_sessions_page_renders_rows() {
   StatusModel m;
   m.sessionN = 2;
@@ -315,6 +387,13 @@ void setup() {
   RUN_TEST(test_header_status_dot_drawn);
   RUN_TEST(test_header_shows_focus_label_when_multi_session);
   RUN_TEST(test_header_hides_focus_label_for_single_session);
+  RUN_TEST(test_header_uses_selected_terminal_name_not_model);
+  RUN_TEST(test_header_falls_back_to_worktree_name);
+  RUN_TEST(test_sessions_header_is_terminals);
+  RUN_TEST(test_overview_context_label_includes_model);
+  RUN_TEST(test_overview_context_label_omits_missing_model);
+  RUN_TEST(test_live_footer_renders_date_time_and_page_dots);
+  RUN_TEST(test_live_footer_uses_five_dots_when_sessions_page_exists);
   RUN_TEST(test_sessions_page_renders_rows);
   RUN_TEST(test_page_dots_draws_four);
   RUN_TEST(test_overview_renders_header_and_dots);
