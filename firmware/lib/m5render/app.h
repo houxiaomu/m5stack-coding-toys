@@ -51,6 +51,7 @@ private:
     LinkState             link_       = LinkState::NoLink;
     uint32_t              lastRxMs_   = 0;
     uint32_t              lastAnimMs_ = 0;
+    int                   offsetMin_  = 0;  // minutes EAST of UTC, from last hello; 0 until synced
     bool                  dirty_      = true;
     uint32_t            (*now_)()     = nullptr;  // set in ctor to platform clock
 };
