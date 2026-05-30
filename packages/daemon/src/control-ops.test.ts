@@ -63,6 +63,8 @@ describe('control ops over socket', () => {
     currentSession() {
       return {
         info: { board: 'X', fw: '0.1.0', caps: ['display'], device_id: 'd' },
+        transportKind: 'serial',
+        transportLabel: 'serial:/dev/cu.usbmodem1101',
         request: async (msg: { k: string }) => {
           if (msg.k === 'tap') return { k: 'tap.ack', p: { ok: true } }
           throw new Error(`unexpected request: ${msg.k}`)
@@ -97,10 +99,18 @@ describe('control ops over socket', () => {
     const r = JSON.parse(out) as {
       runtime: { name: string; version: string }
       state: string
+      transport: string | null
+      transport_label: string | null
+      reconnecting: boolean
+      default_device_id: string | null
       board: string
     }
     expect(r.runtime).toEqual({ name: 'm5ct', version: '0.0.0' })
     expect(r.state).toBe('Connected')
+    expect(r.transport).toBe('serial')
+    expect(r.transport_label).toBe('serial:/dev/cu.usbmodem1101')
+    expect(r.reconnecting).toBe(false)
+    expect(r.default_device_id).toBeNull()
     expect(r.board).toBe('X')
   })
 
@@ -174,6 +184,19 @@ describe('screenshot control op', () => {
   it('errors when no device is connected', async () => {
     const h = makeControlHandler(dmWith(null))
     expect(await h.screenshot('/tmp/x.png')).toEqual({ error: 'no_device' })
+  })
+
+  it('rejects screenshots over BLE transport', async () => {
+    const session = {
+      transportKind: 'ble',
+      request: async () => {
+        throw new Error('should not request screenshot over BLE')
+      },
+    }
+    const h = makeControlHandler(dmWith(session))
+    expect(await h.screenshot('/tmp/x.png')).toEqual({
+      error: 'unsupported_transport: use USB for screenshot',
+    })
   })
 
   it('maps a timeout to device_timeout', async () => {

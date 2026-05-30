@@ -1,5 +1,7 @@
 import type { EventEmitter } from 'node:events'
 
+export type TransportKind = 'serial' | 'ble' | 'fake-stdio'
+
 /**
  * Transport is the byte-stream pipe to a device. Higher layers add framing
  * (NDJSON via @m5stack-coding-toys/protocol's NdjsonFramer) and protocol
@@ -11,4 +13,5 @@ export interface Transport extends EventEmitter {
   close(): Promise<void>
   readonly connected: boolean
   readonly label: string
+  readonly kind: TransportKind
 }

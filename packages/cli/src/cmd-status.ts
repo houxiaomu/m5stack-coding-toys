@@ -12,14 +12,19 @@ export interface StatusRunOpts {
 
 export function formatStatusLines(r: DaemonStatus): string[] {
   const daemon = r.runtime ? `${r.runtime.name} ${r.runtime.version}` : '-'
-  return [
-    `daemon:      ${daemon}`,
-    `state:       ${r.state}`,
+  const lines = [`daemon:      ${daemon}`, `state:       ${r.state}`]
+  if (r.transport) lines.push(`transport:   ${r.transport}`)
+  if (r.default_device_id) lines.push(`default:     ${r.default_device_id}`)
+  if (r.reconnecting) {
+    lines.push('hint:        device is not nearby, powered off, or not advertising')
+  }
+  lines.push(
     `board:       ${r.board ?? '-'}`,
     `fw:          ${r.fw ?? '-'}`,
     `caps:        ${r.caps.join(', ') || '-'}`,
     `device_id:   ${r.device_id ?? '-'}`,
-  ]
+  )
+  return lines
 }
 
 export async function runStatus(opts: StatusRunOpts = {}): Promise<number> {

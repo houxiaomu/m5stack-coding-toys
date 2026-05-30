@@ -17,6 +17,7 @@ static Board makeBoard(MockTransport& t) {
   b.transport = &t;
   b.name = "cores3-se";
   b.fw_ver = "0.4.0";
+  b.device_id = "M5SE-ABCDEF";
   b.input = nullptr;
   b.power = nullptr;
   return b;

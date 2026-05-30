@@ -5,6 +5,7 @@ import type { DeviceManager, DriftEvent, ManagerState } from './device-manager.j
 import { makeLogger } from './logger.js'
 import { rgb565ToPng } from './png.js'
 import { screenshotFilename, screenshotsDir } from './state-dir.js'
+import type { TransportKind } from './transport/interface.js'
 import { type RuntimeInfo, runtimeInfo } from './version.js'
 
 const log = makeLogger('control')
@@ -12,6 +13,10 @@ const log = makeLogger('control')
 export interface StatusSnapshot {
   runtime: RuntimeInfo
   state: ManagerState
+  transport: TransportKind | null
+  transport_label: string | null
+  reconnecting: boolean
+  default_device_id: string | null
   board: string | null
   fw: string | null
   caps: readonly string[]
@@ -34,6 +39,10 @@ export function makeControlHandler(dm: DeviceManager): ControlHandler {
       return {
         runtime: runtimeInfo(),
         state: dm.state(),
+        transport: sess?.transportKind ?? null,
+        transport_label: sess?.transportLabel ?? null,
+        reconnecting: dm.state() === 'Cooldown',
+        default_device_id: null,
         board: sess?.info?.board ?? null,
         fw: sess?.info?.fw ?? null,
         caps: sess?.info?.caps ?? [],
@@ -65,6 +74,9 @@ export function makeControlHandler(dm: DeviceManager): ControlHandler {
     async screenshot(out?: string): Promise<{ ok: true; path: string } | { error: string }> {
       const sess = dm.currentSession()
       if (!sess) return { error: 'no_device' }
+      if (sess.transportKind === 'ble') {
+        return { error: 'unsupported_transport: use USB for screenshot' }
+      }
       let env: Awaited<ReturnType<typeof sess.request>>
       try {
         env = await sess.request({ k: 'screenshot', p: { fmt: 'png' } }, 5000)

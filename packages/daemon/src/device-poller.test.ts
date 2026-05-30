@@ -21,7 +21,9 @@ describe('DevicePoller', () => {
     ])
     const poller = new DevicePoller({ vendorIds: ['303a'], intervalMs: 1000 })
     const attached: PortInfo[] = []
+    const candidates: unknown[] = []
     poller.on('attached', (i: PortInfo) => attached.push(i))
+    poller.on('candidate', (i: unknown) => candidates.push(i))
     poller.start()
     await vi.advanceTimersByTimeAsync(50)
     await vi.advanceTimersByTimeAsync(1100)
@@ -29,6 +31,12 @@ describe('DevicePoller', () => {
     expect(attached).toHaveLength(1)
     expect(attached[0]?.path).toBe('/dev/cu.usbmodem1101')
     expect(attached[0]?.vendorId).toBe('303a')
+    expect(candidates[0]).toMatchObject({
+      kind: 'serial',
+      openKey: '/dev/cu.usbmodem1101',
+      label: '/dev/cu.usbmodem1101',
+      priority: 100,
+    })
   })
 
   it('emits detached when device disappears', async () => {

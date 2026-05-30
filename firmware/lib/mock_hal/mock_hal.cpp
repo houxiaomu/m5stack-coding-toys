@@ -11,7 +11,7 @@ MockDisplay&   display()   { return g_display; }
 MockTransport& transport() { return g_transport; }
 
 static ::m5hal::Board g_board{
-    &g_display, &g_input, &g_power, &g_transport, "mock", "0.0.0",
+    &g_display, &g_input, &g_power, &g_transport, "mock", "0.0.0", "MOCK-000001",
 };
 
 }  // namespace m5hal::mock

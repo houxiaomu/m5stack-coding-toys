@@ -9,6 +9,7 @@ public:
     bool connected() override;
     int  read(uint8_t* buf, std::size_t n) override;
     int  write(const uint8_t* buf, std::size_t n) override;
+    m5hal::TransportKind kind() const override { return m5hal::TransportKind::Serial; }
 };
 
 }  // namespace m5board::cardputer_adv

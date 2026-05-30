@@ -30,6 +30,10 @@ export class SerialTransport extends EventEmitter implements Transport {
     return `serial:${this.resolvedPath || this.opts.port}`
   }
 
+  get kind(): 'serial' {
+    return 'serial'
+  }
+
   async open(): Promise<void> {
     if (this.sp) {
       log.debug('open called while already open', { path: this.resolvedPath })

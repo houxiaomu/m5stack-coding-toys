@@ -67,10 +67,10 @@ async function main(): Promise<void> {
   const dm = new DeviceManager({
     poller,
     profile,
-    transportFactory: (path: string): Transport => {
+    transportFactory: (candidate): Transport => {
       if (cfg.transport.kind === 'fake-stdio') return new FakeStdioTransport(cfg.transport.cmd)
       if (cfg.transport.kind === 'serial') {
-        return new SerialTransport({ port: path, baud: cfg.transport.baud })
+        return new SerialTransport({ port: candidate.openKey, baud: cfg.transport.baud })
       }
       throw new Error(`unsupported transport: ${(cfg.transport as { kind: string }).kind}`)
     },

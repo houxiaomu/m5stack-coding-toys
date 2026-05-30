@@ -116,7 +116,11 @@ void App::handleLine(const char* line, std::size_t len) {
         const char* boardName = (board_ && board_->name) ? board_->name : "cores3-se";
         const char* fw        = (board_ && board_->fw_ver) ? board_->fw_ver : "0.0.0";
         static char deviceId[40];
-        std::snprintf(deviceId, sizeof(deviceId), "M5SE-%s", boardName);
+        if (board_ && board_->device_id && board_->device_id[0]) {
+            std::snprintf(deviceId, sizeof(deviceId), "%s", board_->device_id);
+        } else {
+            std::snprintf(deviceId, sizeof(deviceId), "M5SE-%s", boardName);
+        }
         char out[512];
         std::size_t n = m5proto::encode_hello_ack(
             env.id, 0, boardName, fw, CAPS_CORES3, CAPS_CORES3_N, deviceId, out, sizeof(out));

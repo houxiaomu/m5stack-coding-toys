@@ -9,7 +9,7 @@ import {
   encode,
 } from '@m5stack-coding-toys/protocol'
 import { makeLogger } from './logger.js'
-import type { Transport } from './transport/interface.js'
+import type { Transport, TransportKind } from './transport/interface.js'
 
 const log = makeLogger('session')
 
@@ -73,6 +73,14 @@ export class DeviceSession extends EventEmitter {
 
   get caps(): readonly string[] {
     return this.device?.caps ?? []
+  }
+
+  get transportKind(): TransportKind {
+    return this.transport.kind
+  }
+
+  get transportLabel(): string {
+    return this.transport.label
   }
 
   hasCap(cap: string): boolean {

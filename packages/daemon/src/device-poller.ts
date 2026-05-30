@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { SerialPort } from 'serialport'
+import { type DeviceCandidate, SERIAL_PRIORITY } from './discovery.js'
 import { makeLogger } from './logger.js'
 
 const log = makeLogger('poller')
@@ -64,12 +65,14 @@ export class DevicePoller extends EventEmitter {
         if (!this.seen.has(path)) {
           log.info('attached', info as unknown as Record<string, unknown>)
           this.emit('attached', info)
+          this.emit('candidate', serialCandidate(info))
         }
       }
       for (const [path, info] of this.seen) {
         if (!present.has(path)) {
           log.info('detached', { path })
           this.emit('detached', info)
+          this.emit('lost', serialCandidate(info))
         }
       }
       this.seen = present
@@ -78,5 +81,16 @@ export class DevicePoller extends EventEmitter {
     } finally {
       this.inScan = false
     }
+  }
+}
+
+function serialCandidate(info: PortInfo): DeviceCandidate {
+  return {
+    kind: 'serial',
+    openKey: info.path,
+    label: info.path,
+    priority: SERIAL_PRIORITY,
+    deviceId: info.serialNumber,
+    lastSeenAt: Date.now(),
   }
 }

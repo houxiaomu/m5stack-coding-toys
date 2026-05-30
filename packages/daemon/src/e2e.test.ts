@@ -112,6 +112,7 @@ describe('m5ctd e2e (daemon ↔ fake-firmware via socket)', () => {
     await new Promise((r) => setTimeout(r, 1500))
     const reply = await send(h.socketPath, { op: 'status' })
     const snap = JSON.parse(reply)
+    expect(snap.transport).toBe('fake-stdio')
     expect(snap.board).toBe('cores3-se')
     expect(snap.caps).toContain('display')
   }, 15000)
