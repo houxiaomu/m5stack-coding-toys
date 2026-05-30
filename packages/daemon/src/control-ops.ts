@@ -74,6 +74,9 @@ export function makeControlHandler(dm: DeviceManager): ControlHandler {
     async screenshot(out?: string): Promise<{ ok: true; path: string } | { error: string }> {
       const sess = dm.currentSession()
       if (!sess) return { error: 'no_device' }
+      if (sess.transportKind === 'ble') {
+        return { error: 'unsupported_transport: use USB for screenshot' }
+      }
       let env: Awaited<ReturnType<typeof sess.request>>
       try {
         env = await sess.request({ k: 'screenshot', p: { fmt: 'png' } }, 5000)

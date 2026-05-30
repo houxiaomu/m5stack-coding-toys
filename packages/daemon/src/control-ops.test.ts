@@ -186,6 +186,19 @@ describe('screenshot control op', () => {
     expect(await h.screenshot('/tmp/x.png')).toEqual({ error: 'no_device' })
   })
 
+  it('rejects screenshots over BLE transport', async () => {
+    const session = {
+      transportKind: 'ble',
+      request: async () => {
+        throw new Error('should not request screenshot over BLE')
+      },
+    }
+    const h = makeControlHandler(dmWith(session))
+    expect(await h.screenshot('/tmp/x.png')).toEqual({
+      error: 'unsupported_transport: use USB for screenshot',
+    })
+  })
+
   it('maps a timeout to device_timeout', async () => {
     const session = {
       request: async () => {
