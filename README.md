@@ -2,8 +2,9 @@
 
 M5Stack hardware controller for Claude Code CLI. Renders Claude Code session
 state (model, context, cost, git, limits) on a physical M5Stack device. When
-multiple Claude Code sessions are live, the device can auto-focus the session
-that needs attention or let you pin a session from the Sessions page.
+multiple Claude Code sessions are live, the device shows a Sessions picker.
+Tap a session to inspect its four detail pages; other sessions that need
+attention are shown in the picker without interrupting the current detail view.
 
 ## Install (macOS)
 

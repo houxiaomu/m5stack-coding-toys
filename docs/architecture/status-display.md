@@ -2,9 +2,9 @@
 
 m5ct is a **pure Claude Code status display** (the earlier approve/deny + Cardputer keyboard-prompt scope was dropped — "info too scattered").
 
-Data enters via Claude Code's **`statusLine`** (not hooks): the `m5ct-statusline` shim (`packages/statusline-shim`) forwards CC's JSON → daemon `SessionAggregator` (maps native CC fields + git enrichment + in-memory burnHistory/today) → daemon pushes ONE consolidated `status` frame to the device. Protocol kinds are minimal: `hello`/`status`/`notify`/`ping` plus the RPC pairs (`screenshot`, `tap`) — see [adding-a-host-device-rpc.md](adding-a-host-device-rpc.md).
+Data enters via Claude Code's **`statusLine`** (not hooks): the `m5ct-statusline` shim (`packages/statusline-shim`) forwards CC's JSON → daemon `SessionAggregator` (maps native CC fields + git enrichment + in-memory burnHistory/today) → daemon pushes ONE consolidated `status` frame to the device. When multiple sessions are live, the device owns selection through a Sessions picker; hook activity for other sessions updates the picker rows without interrupting the current detail view. Protocol kinds are minimal: `hello`/`status`/`notify`/`ping` plus the RPC pairs (`screenshot`, `tap`) — see [adding-a-host-device-rpc.md](adding-a-host-device-rpc.md).
 
-Firmware is device-agnostic in 3 layers: a `StatusModel` + `Canvas` interface + pages (Overview/Cost/Limits/Workspace/Waiting), with a per-device `CoreS3Canvas` (M5GFX off-screen sprite double-buffer) and an `App` loop (touch paging).
+Firmware is device-agnostic in 3 layers: a `StatusModel` + `Canvas` interface + pages (Overview/Cost/Limits/Workspace/Sessions/Waiting), with a per-device `CoreS3Canvas` (M5GFX off-screen sprite double-buffer) and an `App` loop (touch paging). In multi-session mode, the detail pages cycle back to Sessions after Workspace, and tapping a detail-page header returns to Sessions immediately.
 
 ## Liveness: three decoupled concerns
 
