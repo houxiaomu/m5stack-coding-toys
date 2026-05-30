@@ -155,32 +155,45 @@ describe('statusPayload activity', () => {
   })
 })
 
-describe('statusPayload multi-session focus metadata', () => {
-  it('accepts focus and session summaries', () => {
+describe('statusPayload multi-session sessions metadata', () => {
+  it('accepts real session summaries only', () => {
     const parsed = statusPayload.parse({
       state: 'active',
       activity: 'working',
-      focus: { mode: 'auto', index: 2, total: 4 },
       sessions: [
-        { index: 0, id: 'auto', name: 'AUTO', activity: 'working', auto: true },
         { index: 1, id: 's1', name: 'm5toys', activity: 'needs_attention', selected: true },
+        { index: 2, id: 's2', name: 'docs', activity: 'working' },
       ],
     })
 
-    expect(parsed.focus).toEqual({ mode: 'auto', index: 2, total: 4 })
     expect(parsed.sessions?.map((s) => [s.id, s.activity])).toEqual([
-      ['auto', 'working'],
       ['s1', 'needs_attention'],
+      ['s2', 'working'],
     ])
   })
 
-  it('rejects invalid focus modes and session activity values', () => {
+  it('rejects legacy focus metadata and auto/pinned session fields', () => {
     expect(
       statusPayload.safeParse({
         state: 'active',
-        focus: { mode: 'manual', index: 1, total: 2 },
+        focus: { mode: 'pinned', index: 1, total: 2 },
       }).success,
     ).toBe(false)
+    expect(
+      statusPayload.safeParse({
+        state: 'active',
+        sessions: [{ index: 0, id: 'auto', name: 'AUTO', activity: 'working', auto: true }],
+      }).success,
+    ).toBe(false)
+    expect(
+      statusPayload.safeParse({
+        state: 'active',
+        sessions: [{ index: 1, id: 's1', name: 'm5toys', activity: 'working', pinned: true }],
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects invalid session activity values', () => {
     expect(
       statusPayload.safeParse({
         state: 'active',

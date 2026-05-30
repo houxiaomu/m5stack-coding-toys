@@ -39,13 +39,6 @@ describe('device payloads', () => {
     expect(parsed.kind).toBe('battery')
   })
 
-  it('device.event accepts focus auto selection', () => {
-    expect(deviceEventPayload.parse({ kind: 'focus', target: 'auto' })).toEqual({
-      kind: 'focus',
-      target: 'auto',
-    })
-  })
-
   it('device.event accepts focus session selection', () => {
     expect(deviceEventPayload.parse({ kind: 'focus', target: 'session', sessionId: 's1' })).toEqual(
       {
@@ -57,6 +50,7 @@ describe('device payloads', () => {
   })
 
   it('device.event rejects invalid focus selection payloads', () => {
+    expect(deviceEventPayload.safeParse({ kind: 'focus', target: 'auto' }).success).toBe(false)
     expect(deviceEventPayload.safeParse({ kind: 'focus', target: 'session' }).success).toBe(false)
     expect(deviceEventPayload.safeParse({ kind: 'focus', target: 'other' }).success).toBe(false)
   })

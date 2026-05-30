@@ -14,7 +14,7 @@ describe('Router', () => {
     ).resolves.toBeUndefined()
   })
 
-  it('routes focus auto events to the callback', async () => {
+  it('ignores legacy focus auto events', async () => {
     const calls: unknown[] = []
     const r = new Router((focus) => calls.push(focus))
     await r.handleDeviceEvent({
@@ -23,7 +23,7 @@ describe('Router', () => {
       t: 0,
       p: { kind: 'focus', target: 'auto' },
     } as never)
-    expect(calls).toEqual([{ target: 'auto' }])
+    expect(calls).toEqual([])
   })
 
   it('routes focus session events to the callback', async () => {

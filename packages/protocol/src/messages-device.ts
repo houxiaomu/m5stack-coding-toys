@@ -26,16 +26,13 @@ const legacyDeviceEventPayload = z
   })
   .passthrough()
 
-const focusDeviceEventPayload = z.discriminatedUnion('target', [
-  z.object({ kind: z.literal('focus'), target: z.literal('auto') }).strict(),
-  z
-    .object({
-      kind: z.literal('focus'),
-      target: z.literal('session'),
-      sessionId: z.string().min(1),
-    })
-    .strict(),
-])
+const focusDeviceEventPayload = z
+  .object({
+    kind: z.literal('focus'),
+    target: z.literal('session'),
+    sessionId: z.string().min(1),
+  })
+  .strict()
 
 export const deviceEventPayload = z.union([legacyDeviceEventPayload, focusDeviceEventPayload])
 
