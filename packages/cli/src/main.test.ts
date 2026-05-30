@@ -34,6 +34,10 @@ describe('@m5stack-coding-toys/cli', () => {
       'flash',
       'install',
       'uninstall',
+      'devices',
+      'pair',
+      'use',
+      'unpair',
       'version',
       'screenshot',
       'tap',
@@ -44,7 +48,7 @@ describe('@m5stack-coding-toys/cli', () => {
     const c = capture()
     await expect(runCli([], c.io)).resolves.toBe(2)
     expect(c.stdout).toEqual([
-      'usage: m5ct <status|watch|flash|install|uninstall|version|screenshot|tap>',
+      'usage: m5ct <status|watch|flash|install|uninstall|devices|pair|use|unpair|version|screenshot|tap>',
     ])
     expect(c.stderr).toEqual([])
   })

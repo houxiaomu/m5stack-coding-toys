@@ -3,10 +3,14 @@
 import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { runDevices } from './cmd-devices.js'
 import { runFlash } from './cmd-flash.js'
+import { runPair } from './cmd-pair.js'
 import { runScreenshot } from './cmd-screenshot.js'
 import { runStatus } from './cmd-status.js'
 import { runTap } from './cmd-tap.js'
+import { runUnpair } from './cmd-unpair.js'
+import { runUse } from './cmd-use.js'
 import { runWatch } from './cmd-watch.js'
 import { computeInstallPatch, computeUninstall, writeSettings } from './install.js'
 import { readM5ctConfig, writeM5ctConfig } from './m5ct-config.js'
@@ -19,6 +23,10 @@ export function listCommands(): readonly string[] {
     'flash',
     'install',
     'uninstall',
+    'devices',
+    'pair',
+    'use',
+    'unpair',
     'version',
     'screenshot',
     'tap',
@@ -111,6 +119,14 @@ export async function runCli(args: readonly string[], io: CliIO = defaultIO): Pr
       return runInstall(rest)
     case 'uninstall':
       return runUninstall(rest)
+    case 'devices':
+      return runDevices({ io })
+    case 'pair':
+      return runPair(rest, io)
+    case 'use':
+      return runUse(rest, { io })
+    case 'unpair':
+      return runUnpair(rest, { io })
     case 'status':
       return runStatus({ json: rest.includes('--json') })
     case 'watch':

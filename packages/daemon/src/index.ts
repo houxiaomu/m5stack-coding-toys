@@ -8,6 +8,17 @@ export {
 } from './version.js'
 export { defaultConfig, loadConfig, type DaemonConfig, type TransportConfig } from './config.js'
 export { stateDir, socketPath, configPath, pidPath, logPath } from './state-dir.js'
+export {
+  addOrUpdateDevice,
+  emptyDeviceStore,
+  readDeviceStore,
+  removeDevice,
+  resolveDeviceId,
+  setDefaultDevice,
+  writeDeviceStore,
+  type DeviceStoreData,
+  type PairedDevice,
+} from './device-store.js'
 export { DeviceSession, type DeviceInfo, type SessionConfig } from './device-session.js'
 export { Router } from './router.js'
 export { HookServer } from './hook-server.js'
