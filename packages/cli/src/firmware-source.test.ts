@@ -51,11 +51,7 @@ describe('prepareFirmware local', () => {
     expect(p.version).toBe('9.9.9')
     expect(p.verified).toBe(true)
     expect(p.files.map((f) => f.offset)).toEqual([0x0, 0x8000, 0x10000])
-    expect(p.files.map((f) => f.name)).toEqual([
-      'bootloader.bin',
-      'partitions.bin',
-      'firmware.bin',
-    ])
+    expect(p.files.map((f) => f.name)).toEqual(['bootloader.bin', 'partitions.bin', 'firmware.bin'])
     expect(p.files[2].size).toBe(APP.length)
     expect(p.sourceLabel).toContain('local')
   })

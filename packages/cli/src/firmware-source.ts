@@ -89,7 +89,13 @@ async function prepareBuiltin(
       sha256: meta?.sha256,
     }
   })
-  return { board: entry.board, version: entry.version, files, verified: true, sourceLabel: 'builtin' }
+  return {
+    board: entry.board,
+    version: entry.version,
+    files,
+    verified: true,
+    sourceLabel: 'builtin',
+  }
 }
 
 async function prepareRemote(

@@ -25,11 +25,7 @@ describe('parseManifest', () => {
     expect(m.board).toBe('cores3-se')
     expect(m.version).toBe('0.4.0')
     expect(m.files.map((f) => f.offset)).toEqual([0x0, 0x8000, 0x10000])
-    expect(m.files.map((f) => f.name)).toEqual([
-      'bootloader.bin',
-      'partitions.bin',
-      'firmware.bin',
-    ])
+    expect(m.files.map((f) => f.name)).toEqual(['bootloader.bin', 'partitions.bin', 'firmware.bin'])
   })
 
   it('merges the sha256 dictionary into each file', () => {

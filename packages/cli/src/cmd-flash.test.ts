@@ -25,7 +25,13 @@ const PREP: PreparedFirmware = {
       size: 100,
       sha256: 'a'.repeat(64),
     },
-    { path: '/c/firmware.bin', offset: 0x10000, name: 'firmware.bin', size: 200, sha256: 'c'.repeat(64) },
+    {
+      path: '/c/firmware.bin',
+      offset: 0x10000,
+      name: 'firmware.bin',
+      size: 200,
+      sha256: 'c'.repeat(64),
+    },
   ],
 }
 
@@ -48,14 +54,22 @@ describe('runFlash flag parsing', () => {
 
   it('rejects --dir with no value (code 2)', async () => {
     const t = io()
-    const code = await runFlash(['--dir='], { io: t.io, call: noDaemon, socket: '/tmp/m5ct-nope.sock' })
+    const code = await runFlash(['--dir='], {
+      io: t.io,
+      call: noDaemon,
+      socket: '/tmp/m5ct-nope.sock',
+    })
     expect(code).toBe(2)
     expect(t.errs.join(' ')).toMatch(/--dir requires a path/)
   })
 
   it('rejects an unknown option (code 2)', async () => {
     const t = io()
-    const code = await runFlash(['--bogus'], { io: t.io, call: noDaemon, socket: '/tmp/m5ct-nope.sock' })
+    const code = await runFlash(['--bogus'], {
+      io: t.io,
+      call: noDaemon,
+      socket: '/tmp/m5ct-nope.sock',
+    })
     expect(code).toBe(2)
     expect(t.errs.join(' ')).toMatch(/unknown option/)
   })
@@ -65,7 +79,13 @@ describe('runFlash flag parsing', () => {
     const prepare = vi.fn(async () => PREP)
     const flash = vi.fn(async () => 0)
     const call = vi.fn(noDaemon)
-    const code = await runFlash(['--dry-run'], { io: t.io, prepare, call, flash, socket: '/tmp/m5ct-nope.sock' })
+    const code = await runFlash(['--dry-run'], {
+      io: t.io,
+      prepare,
+      call,
+      flash,
+      socket: '/tmp/m5ct-nope.sock',
+    })
     expect(code).toBe(0)
     expect(prepare).toHaveBeenCalledTimes(1)
     expect(flash).not.toHaveBeenCalled()
@@ -80,7 +100,13 @@ describe('runFlash flag parsing', () => {
       return PREP
     })
     const flash = vi.fn(async () => 0)
-    const code = await runFlash([], { io: t.io, prepare, call: noDaemon, flash, socket: '/tmp/m5ct-nope.sock' })
+    const code = await runFlash([], {
+      io: t.io,
+      prepare,
+      call: noDaemon,
+      flash,
+      socket: '/tmp/m5ct-nope.sock',
+    })
     expect(code).toBe(0)
     expect(flash).toHaveBeenCalledTimes(1)
   })
@@ -93,7 +119,13 @@ describe('runFlash flag parsing', () => {
       return { ...PREP, board: null, verified: false, sourceLabel: 'local dir=/tmp/build' }
     })
     const flash = vi.fn(async () => 0)
-    const code = await runFlash(['--dir=/tmp/build'], { io: t.io, prepare, call: noDaemon, flash, socket: '/tmp/m5ct-nope.sock' })
+    const code = await runFlash(['--dir=/tmp/build'], {
+      io: t.io,
+      prepare,
+      call: noDaemon,
+      flash,
+      socket: '/tmp/m5ct-nope.sock',
+    })
     expect(code).toBe(0)
     expect(prepare).toHaveBeenCalled()
   })
@@ -104,7 +136,13 @@ describe('runFlash flag parsing', () => {
       throw new Error('missing firmware.bin in /tmp/build (no manifest.json)')
     })
     const flash = vi.fn(async () => 0)
-    const code = await runFlash(['--dir=/tmp/build'], { io: t.io, prepare, call: noDaemon, flash, socket: '/tmp/m5ct-nope.sock' })
+    const code = await runFlash(['--dir=/tmp/build'], {
+      io: t.io,
+      prepare,
+      call: noDaemon,
+      flash,
+      socket: '/tmp/m5ct-nope.sock',
+    })
     expect(code).toBe(1)
     expect(flash).not.toHaveBeenCalled()
     expect(t.errs.join(' ')).toMatch(/preparation failed/)
