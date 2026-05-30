@@ -307,9 +307,9 @@ describe('SessionAggregator', () => {
       ['pid:111', 'a'],
       ['pid:222', 'b'],
     ])
-    expect(frame.p.sessions.some((s: { auto?: boolean; pinned?: boolean }) => s.auto || s.pinned)).toBe(
-      false,
-    )
+    expect(
+      frame.p.sessions.some((s: { auto?: boolean; pinned?: boolean }) => s.auto || s.pinned),
+    ).toBe(false)
   })
 
   it('does not auto foreground another session that needs attention', async () => {
