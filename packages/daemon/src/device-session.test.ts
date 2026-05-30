@@ -1,7 +1,7 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { DeviceSession } from './device-session.js'
+import { DeviceSession, deriveDeviceTime } from './device-session.js'
 import { FakeStdioTransport } from './transport/fake-stdio.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -75,4 +75,26 @@ describe('DeviceSession (against real fake-firmware subprocess)', () => {
     // Wait briefly for event loop to settle.
     await Promise.race([disc, new Promise((r) => setTimeout(r, 200))])
   }, 5000)
+})
+
+describe('deriveDeviceTime', () => {
+  it('returns utc_ms equal to the Date and an integer offset in range', () => {
+    const d = new Date('2026-05-30T04:00:00.000Z')
+    const r = deriveDeviceTime(d)
+    expect(r.utc_ms).toBe(d.getTime())
+    expect(Number.isInteger(r.offset_min)).toBe(true)
+    expect(r.offset_min).toBeGreaterThanOrEqual(-840)
+    expect(r.offset_min).toBeLessThanOrEqual(840)
+  })
+
+  it('local = utc + offset reconstructs the host wall-clock (TZ-independent invariant)', () => {
+    const d = new Date('2026-05-30T04:00:00.000Z')
+    const r = deriveDeviceTime(d)
+    // Adding the east-of-UTC offset to the UTC instant, then reading UTC fields,
+    // must equal the original Date's LOCAL fields.
+    const local = new Date(r.utc_ms + r.offset_min * 60_000)
+    expect(local.getUTCHours()).toBe(d.getHours())
+    expect(local.getUTCMinutes()).toBe(d.getMinutes())
+    expect(local.getUTCDate()).toBe(d.getDate())
+  })
 })

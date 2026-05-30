@@ -18,6 +18,13 @@ const sessionSummary = z.object({
 
 export const helloPayload = z.object({
   caps: capsSchema,
+  time: z
+    .object({
+      utc_ms: z.number().int().nonnegative(), // UTC epoch milliseconds
+      offset_min: z.number().int().min(-840).max(840), // minutes EAST of UTC; UTC+8 → +480
+    })
+    .strict()
+    .optional(),
 })
 
 export const notifyPayload = z.object({

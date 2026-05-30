@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <string>
 #include <vector>
 
@@ -9,6 +10,7 @@
 #include "codec.h"
 #include "dbg.h"
 #include "messages.h"
+#include "time_util.h"
 
 #ifndef BOARD_MOCK
 #include <M5Unified.h>  // millis(), M5.Rtc
@@ -94,6 +96,22 @@ void App::handleLine(const char* line, std::size_t len) {
     }
 
     if (std::strcmp(env.kind, m5proto::kind::hello) == 0) {
+        // Optional time sync: host sends UTC epoch ms + east-of-UTC offset.
+        // RTC stores UTC (M5/ESP-IDF convention); offsetMin_ is applied at render.
+        JsonObjectConst hp = env.doc["p"].as<JsonObjectConst>();
+        JsonObjectConst ht = hp["time"].as<JsonObjectConst>();
+        if (!ht.isNull() && !ht["utc_ms"].isNull()) {
+            long long utcMs = ht["utc_ms"].as<long long>();
+            offsetMin_      = ht["offset_min"].as<int>();
+#ifndef BOARD_MOCK
+            std::time_t s = static_cast<std::time_t>(utcMs / 1000);
+            std::tm     utc{};
+            gmtime_r(&s, &utc);
+            M5.Rtc.setDateTime(&utc);
+#endif
+            dirty_ = true;  // refresh waiting-screen clock immediately
+        }
+
         // Minimal handshake: reply hello.ack with board/fw/caps.
         const char* boardName = (board_ && board_->name) ? board_->name : "cores3-se";
         const char* fw        = (board_ && board_->fw_ver) ? board_->fw_ver : "0.0.0";
@@ -267,10 +285,11 @@ void App::refreshDeviceInfo() {
         }
     }
 #ifndef BOARD_MOCK
-    auto dt = M5.Rtc.getDateTime();
-    std::snprintf(dev_.clock, sizeof(dev_.clock), "%02d:%02d", dt.time.hours, dt.time.minutes);
-    std::snprintf(dev_.date, sizeof(dev_.date), "%04d-%02d-%02d",
-                  dt.date.year, dt.date.month, dt.date.date);
+    auto       dt = M5.Rtc.getDateTime();  // RTC holds UTC
+    LocalClock lc = localFromUtc(dt.date.year, dt.date.month, dt.date.date, dt.time.hours,
+                                 dt.time.minutes, dt.time.seconds, offsetMin_);
+    std::snprintf(dev_.clock, sizeof(dev_.clock), "%02d:%02d", lc.hour, lc.minute);
+    std::snprintf(dev_.date, sizeof(dev_.date), "%04d-%02d-%02d", lc.year, lc.month, lc.day);
 #endif
 }
 

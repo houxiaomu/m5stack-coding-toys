@@ -88,6 +88,44 @@ describe('statusPayload', () => {
   })
 })
 
+describe('helloPayload', () => {
+  it('accepts hello without time (backward compatible)', () => {
+    expect(helloPayload.safeParse({ caps: ['display', 'notify'] }).success).toBe(true)
+  })
+
+  it('accepts hello with time { utc_ms, offset_min }', () => {
+    const r = helloPayload.safeParse({
+      caps: ['display'],
+      time: { utc_ms: 1748600000000, offset_min: 480 },
+    })
+    expect(r.success).toBe(true)
+  })
+
+  it('accepts a negative (west-of-UTC) offset', () => {
+    expect(
+      helloPayload.safeParse({ caps: ['display'], time: { utc_ms: 0, offset_min: -300 } }).success,
+    ).toBe(true)
+  })
+
+  it('rejects out-of-range offset and negative utc_ms', () => {
+    expect(
+      helloPayload.safeParse({ caps: ['display'], time: { utc_ms: 1, offset_min: 900 } }).success,
+    ).toBe(false)
+    expect(
+      helloPayload.safeParse({ caps: ['display'], time: { utc_ms: -1, offset_min: 0 } }).success,
+    ).toBe(false)
+  })
+
+  it('rejects unknown keys inside time (.strict)', () => {
+    expect(
+      helloPayload.safeParse({
+        caps: ['display'],
+        time: { utc_ms: 1, offset_min: 0, extra: 1 },
+      }).success,
+    ).toBe(false)
+  })
+})
+
 describe('retained host messages', () => {
   it('hello still carries caps', () => {
     expect(helloPayload.safeParse({ caps: ['display', 'touch'] }).success).toBe(true)
