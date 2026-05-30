@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { SERIAL_PRIORITY, type DeviceCandidate } from './discovery.js'
 import type { DevicePoller, PortInfo } from './device-poller.js'
 import type { DeviceProfile, DriftLevel } from './device-profile.js'
 import type { DeviceSession, SessionConfig } from './device-session.js'
@@ -15,7 +16,7 @@ export type ManagerState =
   | 'Cooldown'
   | 'Held'
 
-export type TransportFactory = (path: string) => Transport
+export type TransportFactory = (candidate: DeviceCandidate) => Transport
 export type SessionFactory = (transport: Transport, cfg: SessionConfig) => DeviceSession
 
 export interface DeviceManagerOpts {
@@ -60,7 +61,8 @@ export class DeviceManager extends EventEmitter {
     this.backoff = opts.backoffMs ?? DEFAULT_BACKOFF
     this.heldTimeoutMs = opts.heldTimeoutMs ?? 60000
     this.cfg = opts.cfg ?? DEFAULT_CFG
-    opts.poller.on('attached', (info: PortInfo) => this.onAttached(info))
+    opts.poller.on('candidate', (candidate: DeviceCandidate) => this.onCandidate(candidate))
+    opts.poller.on('attached', (info: PortInfo) => this.onCandidate(serialCandidate(info)))
   }
 
   start(): void {
@@ -153,20 +155,20 @@ export class DeviceManager extends EventEmitter {
     else this.opts.poller.stop()
   }
 
-  private onAttached(info: PortInfo): void {
+  private onCandidate(candidate: DeviceCandidate): void {
     if (this._state !== 'Scanning') return
-    void this.openAndHandshake(info)
+    void this.openAndHandshake(candidate)
   }
 
-  private async openAndHandshake(info: PortInfo): Promise<void> {
+  private async openAndHandshake(candidate: DeviceCandidate): Promise<void> {
     this.transition('Opening')
     let transport: Transport
     try {
-      transport = this.opts.transportFactory(info.path)
+      transport = this.opts.transportFactory(candidate)
       this.currentTransport = transport
       await transport.open()
     } catch (err) {
-      log.warn('open failed', { path: info.path, error: (err as Error).message })
+      log.warn('open failed', { candidate: candidate.label, error: (err as Error).message })
       this.currentTransport = null
       this.enterCooldown()
       return
@@ -215,5 +217,16 @@ export class DeviceManager extends EventEmitter {
       this.cooldownTimer = null
       if (this._state === 'Cooldown' && this.started) this.transition('Scanning')
     }, delay)
+  }
+}
+
+function serialCandidate(info: PortInfo): DeviceCandidate {
+  return {
+    kind: 'serial',
+    openKey: info.path,
+    label: info.path,
+    priority: SERIAL_PRIORITY,
+    deviceId: info.serialNumber,
+    lastSeenAt: Date.now(),
   }
 }

@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { DeviceCandidate } from './discovery.js'
 import { DeviceManager, type ManagerState } from './device-manager.js'
 
 class FakePoller extends EventEmitter {
@@ -16,7 +17,7 @@ class FakePoller extends EventEmitter {
 
 function makeTransportFactory(opens: ('ok' | 'fail')[]) {
   let i = 0
-  return (_path: string) => {
+  return (_candidate: DeviceCandidate) => {
     const outcome = opens[i++] ?? 'ok'
     const t = new EventEmitter() as EventEmitter & {
       open: () => Promise<void>
@@ -24,9 +25,11 @@ function makeTransportFactory(opens: ('ok' | 'fail')[]) {
       write: (b: Buffer | string) => Promise<void>
       connected: boolean
       label: string
+      kind: 'serial'
     }
     t.connected = false
     t.label = `fake:${i}`
+    t.kind = 'serial'
     t.open = async () => {
       if (outcome === 'fail') throw new Error('open failed')
       t.connected = true
@@ -103,6 +106,28 @@ describe('DeviceManager', () => {
     expect(states).toContain('Connected')
     expect(dm.currentSession()).not.toBeNull()
     expect(poller.stopCount).toBeGreaterThan(0)
+    dm.stop()
+  })
+
+  it('passes a serial DeviceCandidate to the transport factory', async () => {
+    const poller = new FakePoller()
+    const seen: DeviceCandidate[] = []
+    const dm = new DeviceManager({
+      poller: poller as unknown as never,
+      transportFactory: ((candidate: DeviceCandidate) => {
+        seen.push(candidate)
+        return makeTransportFactory(['ok'])(candidate)
+      }) as never,
+      sessionFactory: makeSessionFactory('ok') as never,
+    })
+    dm.start()
+    poller.emit('attached', { path: '/dev/cu.x', vendorId: '303a', productId: '1001' })
+    await vi.advanceTimersByTimeAsync(20)
+    expect(seen[0]).toMatchObject({
+      kind: 'serial',
+      openKey: '/dev/cu.x',
+      priority: 100,
+    })
     dm.stop()
   })
 
