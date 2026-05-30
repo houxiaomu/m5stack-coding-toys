@@ -9,6 +9,25 @@ enum class IconId : uint8_t {
     None = 0,
 };
 
+enum class TransportKind : uint8_t {
+    None = 0,
+    Serial = 1,
+    Ble = 2,
+};
+
+enum class BleUiState : uint8_t {
+    Off = 0,
+    Ready = 1,
+    Pairing = 2,
+    Connected = 3,
+    Lost = 4,
+};
+
+struct TransportUiStatus {
+    TransportKind active = TransportKind::None;
+    BleUiState    ble    = BleUiState::Off;
+};
+
 struct InputEvent {
     enum Kind : uint8_t {
         ButtonPress = 0,
@@ -60,6 +79,8 @@ public:
     virtual bool connected() = 0;
     virtual int  read(uint8_t* buf, std::size_t n) = 0;
     virtual int  write(const uint8_t* buf, std::size_t n) = 0;
+    virtual TransportKind kind() const { return TransportKind::None; }
+    virtual TransportUiStatus uiStatus() const { return {}; }
 };
 
 struct Board {
@@ -69,6 +90,7 @@ struct Board {
     Transport*  transport;
     const char* name;
     const char* fw_ver;
+    const char* device_id;
 };
 
 Board* create_board();

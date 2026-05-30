@@ -1,7 +1,9 @@
 #include "m5hal.h"
 
 #include <M5Unified.h>
+#include <cstring>
 
+#include "device_id.h"
 #include "display.h"
 #include "input_keyboard.h"
 #include "power.h"
@@ -14,6 +16,7 @@ m5board::cardputer_adv::CardputerDisplay      g_display;
 m5board::cardputer_adv::CardputerKeyboardInput g_input;
 m5board::cardputer_adv::CardputerPower         g_power;
 m5board::cardputer_adv::SerialTransport        g_transport;
+char                                           g_device_id[24] = "";
 Board g_board{
     /* display   */ &g_display,
     /* input     */ &g_input,
@@ -21,6 +24,7 @@ Board g_board{
     /* transport */ &g_transport,
     /* name      */ "cardputer-adv",
     /* fw_ver    */ "0.3.0",
+    /* device_id */ g_device_id,
 };
 }  // namespace
 
@@ -30,6 +34,9 @@ Board* create_board() {
     // to assume Cardputer if hardware auto-detection comes up empty.
     cfg.fallback_board = m5::board_t::board_M5Cardputer;
     M5.begin(cfg);
+    std::string id = formatDeviceId("M5CP", static_cast<uint32_t>(ESP.getEfuseMac()));
+    std::strncpy(g_device_id, id.c_str(), sizeof(g_device_id) - 1);
+    g_device_id[sizeof(g_device_id) - 1] = '\0';
     return &g_board;
 }
 
