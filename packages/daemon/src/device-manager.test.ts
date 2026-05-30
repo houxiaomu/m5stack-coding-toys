@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { DeviceCandidate } from './discovery.js'
 import { DeviceManager, type ManagerState } from './device-manager.js'
+import type { DeviceCandidate } from './discovery.js'
 
 class FakePoller extends EventEmitter {
   started = false

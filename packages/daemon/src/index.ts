@@ -7,7 +7,7 @@ export {
   type RuntimeInfo,
 } from './version.js'
 export { defaultConfig, loadConfig, type DaemonConfig, type TransportConfig } from './config.js'
-export { stateDir, socketPath, configPath, pidPath, logPath } from './state-dir.js'
+export { stateDir, socketPath, configPath, pidPath, logPath, devicesPath } from './state-dir.js'
 export {
   addOrUpdateDevice,
   emptyDeviceStore,

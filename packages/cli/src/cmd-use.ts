@@ -1,4 +1,5 @@
 import {
+  devicesPath,
   readDeviceStore,
   resolveDeviceId,
   setDefaultDevice,
@@ -27,7 +28,7 @@ export function runUse(args: readonly string[], opts: UseRunOpts = {}): number {
     io.error('usage: m5ct use <device>')
     return 2
   }
-  const path = opts.storePath
+  const path = opts.storePath ?? devicesPath()
   const store = readDeviceStore(path)
   try {
     const deviceId = resolveDeviceId(store, query)

@@ -33,7 +33,7 @@ export function readDeviceStore(path: string = devicesPath()): DeviceStoreData {
   }
 }
 
-export function writeDeviceStore(path: string = devicesPath(), data: DeviceStoreData): void {
+export function writeDeviceStore(path: string, data: DeviceStoreData): void {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, `${JSON.stringify(normalize(data), null, 2)}\n`)
 }

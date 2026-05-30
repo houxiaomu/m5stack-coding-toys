@@ -12,10 +12,7 @@ export interface StatusRunOpts {
 
 export function formatStatusLines(r: DaemonStatus): string[] {
   const daemon = r.runtime ? `${r.runtime.name} ${r.runtime.version}` : '-'
-  const lines = [
-    `daemon:      ${daemon}`,
-    `state:       ${r.state}`,
-  ]
+  const lines = [`daemon:      ${daemon}`, `state:       ${r.state}`]
   if (r.transport) lines.push(`transport:   ${r.transport}`)
   if (r.default_device_id) lines.push(`default:     ${r.default_device_id}`)
   if (r.reconnecting) {

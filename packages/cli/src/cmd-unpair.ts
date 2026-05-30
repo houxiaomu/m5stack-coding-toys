@@ -1,4 +1,5 @@
 import {
+  devicesPath,
   readDeviceStore,
   removeDevice,
   resolveDeviceId,
@@ -27,7 +28,7 @@ export function runUnpair(args: readonly string[], opts: UnpairRunOpts = {}): nu
     io.error('usage: m5ct unpair <device>')
     return 2
   }
-  const path = opts.storePath
+  const path = opts.storePath ?? devicesPath()
   const store = readDeviceStore(path)
   try {
     const deviceId = resolveDeviceId(store, query)

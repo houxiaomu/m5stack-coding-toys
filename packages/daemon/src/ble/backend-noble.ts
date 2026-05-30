@@ -1,4 +1,4 @@
-import { BleUnavailableError, type BleCentral } from './types.js'
+import { type BleCentral, BleUnavailableError } from './types.js'
 
 type DynamicImport = (specifier: string) => Promise<unknown>
 

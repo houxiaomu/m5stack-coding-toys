@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events'
-import { SERIAL_PRIORITY, type DeviceCandidate } from './discovery.js'
 import type { DevicePoller, PortInfo } from './device-poller.js'
 import type { DeviceProfile, DriftLevel } from './device-profile.js'
 import type { DeviceSession, SessionConfig } from './device-session.js'
+import { type DeviceCandidate, SERIAL_PRIORITY } from './discovery.js'
 import { makeLogger } from './logger.js'
 import type { Transport } from './transport/interface.js'
 

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { SerialPort } from 'serialport'
-import { SERIAL_PRIORITY, type DeviceCandidate } from './discovery.js'
+import { type DeviceCandidate, SERIAL_PRIORITY } from './discovery.js'
 import { makeLogger } from './logger.js'
 
 const log = makeLogger('poller')

@@ -1,4 +1,4 @@
-import { pairDevice, type BleCentral, type BleAdvertisement } from '@m5stack-coding-toys/daemon'
+import { type BleAdvertisement, type BleCentral, pairDevice } from '@m5stack-coding-toys/daemon'
 
 interface IO {
   log(line: string): void
