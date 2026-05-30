@@ -4,6 +4,27 @@
   "type": "module",
   "description": "M5Stack hardware status display for Claude Code",
   "license": "MIT",
+  "author": "houxiaomu",
+  "homepage": "https://github.com/houxiaomu/m5stack-coding-toys#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/houxiaomu/m5stack-coding-toys.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/houxiaomu/m5stack-coding-toys/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "claude",
+    "anthropic",
+    "m5stack",
+    "cores3",
+    "esp32",
+    "status-display",
+    "statusline",
+    "cli"
+  ],
   "bin": {
     "m5ct": "./dist/m5ct.js",
     "m5ctd": "./dist/m5ctd.js",

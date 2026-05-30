@@ -2,6 +2,10 @@
 
 English | [中文](README.zh-CN.md)
 
+[![CI](https://github.com/houxiaomu/m5stack-coding-toys/actions/workflows/ci.yml/badge.svg)](https://github.com/houxiaomu/m5stack-coding-toys/actions/workflows/ci.yml)
+[![firmware](https://img.shields.io/github/v/tag/houxiaomu/m5stack-coding-toys?filter=fw-cores3-se-*&label=firmware&color=blue)](https://github.com/houxiaomu/m5stack-coding-toys/releases)
+[![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A physical status display for Claude Code. It mirrors your live Claude Code
 session — model, context usage, cost, rate limits, git diff — onto an M5Stack
 device on your desk, so you can glance at where a run stands without switching

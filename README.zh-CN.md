@@ -2,6 +2,10 @@
 
 [English](README.md) | 中文
 
+[![CI](https://github.com/houxiaomu/m5stack-coding-toys/actions/workflows/ci.yml/badge.svg)](https://github.com/houxiaomu/m5stack-coding-toys/actions/workflows/ci.yml)
+[![firmware](https://img.shields.io/github/v/tag/houxiaomu/m5stack-coding-toys?filter=fw-cores3-se-*&label=firmware&color=blue)](https://github.com/houxiaomu/m5stack-coding-toys/releases)
+[![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 一块给 Claude Code 用的实体状态屏。它把你正在进行的 Claude Code 会话——模型、
 上下文占用、花费、速率限制、git diff——实时映射到桌上的 M5Stack 设备上,让你
 不切窗口就能一眼看到一次运行进行到哪了。当同时跑多个会话时,设备会变成一个可以
