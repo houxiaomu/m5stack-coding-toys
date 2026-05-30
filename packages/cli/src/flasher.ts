@@ -14,6 +14,26 @@ export interface FlashProgress {
 }
 export type ProgressFn = (p: FlashProgress) => void
 
+interface RegisterWriter {
+  writeReg(addr: number, value: number): Promise<void>
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+export async function watchdogResetEsp32S3(loader: RegisterWriter): Promise<void> {
+  const rtcCntlBase = 0x60008000
+  const rtcCntlWdtConfig0Reg = rtcCntlBase + 0x0098
+  const rtcCntlWdtConfig1Reg = rtcCntlBase + 0x009c
+  const rtcCntlWdtWprotectReg = rtcCntlBase + 0x00b0
+  const rtcCntlWdtWkey = 0x50d83aa1
+
+  await loader.writeReg(rtcCntlWdtWprotectReg, rtcCntlWdtWkey)
+  await loader.writeReg(rtcCntlWdtConfig1Reg, 2000)
+  await loader.writeReg(rtcCntlWdtConfig0Reg, (1 << 31) | (5 << 28) | (1 << 8) | 2)
+  await loader.writeReg(rtcCntlWdtWprotectReg, 0)
+  await sleep(500)
+}
+
 // esptool-js@0.6.x dropped the implementable Transport interface: Transport is
 // now a concrete class wrapping a W3C Web Serial `SerialPort`. So instead of
 // faking Transport, we expose a Web Serial-shaped device backed by node
@@ -94,6 +114,7 @@ export class Flasher {
     const device = new WebSerialPort(opts.port)
     // Transport's constructor only stores the device; it does not open it.
     this.transport = new Transport(device as unknown as never, false)
+    ;(this.transport as unknown as { trace?: (message: string) => void }).trace = () => {}
     this.log = opts.log
   }
 
@@ -140,6 +161,12 @@ export class Flasher {
         if (f) onProgress({ file: f.path, written, total })
       },
     })
+  }
+
+  async resetAfterFlash(): Promise<void> {
+    if (!this.loader) throw new Error('open() first')
+    this.log?.('Hard resetting with a watchdog...')
+    await watchdogResetEsp32S3(this.loader)
   }
 
   async close(): Promise<void> {

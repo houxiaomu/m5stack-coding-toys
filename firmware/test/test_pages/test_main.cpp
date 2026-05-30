@@ -17,7 +17,35 @@ void test_overview_renders_context_tile_with_bar() {
 void test_overview_degrades_when_no_context() {
   StatusModel m; m.hasContext = false;
   MockCanvas c; renderPage(PageId::Overview, m, c);
-  TEST_ASSERT_TRUE(c.called("text", "—"));  // placeholder, no crash
+  TEST_ASSERT_TRUE(c.called("text", "-"));  // placeholder, no crash
+}
+
+void test_overview_diff_uses_git_diff_stats() {
+  StatusModel m;
+  m.hasGit = true;
+  m.hasDiff = true;
+  m.diffLinesAdded = 128;
+  m.diffLinesRemoved = 24;
+  m.linesAdded = 1;
+  m.linesRemoved = 2;
+  MockCanvas c; renderPage(PageId::Overview, m, c);
+  TEST_ASSERT_TRUE(c.called("text", "+128 / -24"));
+}
+
+void test_overview_block_reset_formats_hours() {
+  StatusModel m;
+  m.hasBlock = true;
+  m.blockResetInMin = 65;
+  MockCanvas c; renderPage(PageId::Overview, m, c);
+  TEST_ASSERT_TRUE(c.called("text", "resets 1h5m"));
+}
+
+void test_overview_block_reset_keeps_minutes_under_one_hour() {
+  StatusModel m;
+  m.hasBlock = true;
+  m.blockResetInMin = 59;
+  MockCanvas c; renderPage(PageId::Overview, m, c);
+  TEST_ASSERT_TRUE(c.called("text", "resets 59m"));
 }
 
 void test_limits_uses_single_weekly_row() {
@@ -66,13 +94,13 @@ void test_cost_no_sparkline_when_no_history() {
 void test_cost_degrades_when_no_cost() {
   StatusModel m; m.hasCost = false;
   MockCanvas c; renderPage(PageId::Cost, m, c);
-  TEST_ASSERT_TRUE(c.called("text", "—"));
+  TEST_ASSERT_TRUE(c.called("text", "-"));
 }
 
 void test_workspace_degrades_when_no_git() {
   StatusModel m; m.hasGit = false;
   MockCanvas c; renderPage(PageId::Workspace, m, c);
-  TEST_ASSERT_TRUE(c.called("text", "—"));
+  TEST_ASSERT_TRUE(c.called("text", "-"));
 }
 
 void test_workspace_dirty_renders_dense_diff() {
@@ -176,7 +204,7 @@ void test_cost_rows_degrade_when_no_today_or_weekly() {
   // Row labels still render; their values fall back to the dash placeholder.
   TEST_ASSERT_TRUE(c.called("text", "TODAY TOTAL"));
   TEST_ASSERT_TRUE(c.called("text", "WEEKLY"));
-  TEST_ASSERT_TRUE(c.called("text", "—"));
+  TEST_ASSERT_TRUE(c.called("text", "-"));
 }
 
 void test_header_status_dot_drawn() {
@@ -264,6 +292,9 @@ void setup() {
   UNITY_BEGIN();
   RUN_TEST(test_overview_renders_context_tile_with_bar);
   RUN_TEST(test_overview_degrades_when_no_context);
+  RUN_TEST(test_overview_diff_uses_git_diff_stats);
+  RUN_TEST(test_overview_block_reset_formats_hours);
+  RUN_TEST(test_overview_block_reset_keeps_minutes_under_one_hour);
   RUN_TEST(test_limits_uses_single_weekly_row);
   RUN_TEST(test_limits_renders_three_rows);
   RUN_TEST(test_waiting_uses_device_info_not_status);

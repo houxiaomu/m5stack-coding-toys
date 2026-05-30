@@ -8,7 +8,7 @@
 namespace m5render {
 
 // Placeholder rendered for any data group whose has* flag is false.
-static const char* kDash = "—";
+static const char* kDash = "-";
 
 const char* activityLabel(Activity a) {
   switch (a) {
@@ -102,7 +102,7 @@ static void microBarOrDash(Canvas& c, bool has, int x, int y, int w, int h,
   if (has) c.microBar(x, y, w, h, pct, fg);
 }
 
-// Tile: label + big value + optional sub + optional bar. `has` false → big="—".
+// Tile: label + big value + optional sub + optional bar. `has` false -> big="-".
 static void drawTile(Canvas& c, int x, int y, int w, int h,
                      const char* label, bool has, const char* big,
                      const char* sub, int barPct, bool barWarn) {
@@ -165,6 +165,14 @@ static const char* truncateTail(const char* s, int maxChars, char* out, size_t c
   return out;
 }
 
+static void formatResetIn(char* out, size_t cap, int minutes) {
+  if (minutes >= 60) {
+    snprintf(out, cap, "resets %dh%dm", minutes / 60, minutes % 60);
+    return;
+  }
+  snprintf(out, cap, "resets %dm", minutes);
+}
+
 // ── PAGE · Overview ─────────────────────────────────────────────────────────
 static void drawOverview(const StatusModel& m, Canvas& c) {
   M5CT_DBG("ov start");
@@ -194,7 +202,7 @@ static void drawOverview(const StatusModel& m, Canvas& c) {
   char blk[24], blkSub[24];
   snprintf(blk, sizeof(blk), "%d%%", m.blockPct);
   if (m.blockResetInMin > 0)
-    snprintf(blkSub, sizeof(blkSub), "resets %dm", m.blockResetInMin);
+    formatResetIn(blkSub, sizeof(blkSub), m.blockResetInMin);
   else
     blkSub[0] = 0;
   drawTile(c, 165, 56, 150, 74, "5H BLOCK", m.hasBlock, blk, blkSub,
@@ -208,7 +216,9 @@ static void drawOverview(const StatusModel& m, Canvas& c) {
 
   // DIFF tile (git)
   char diff[32], gs[24];
-  snprintf(diff, sizeof(diff), "+%d / -%d", m.linesAdded, m.linesRemoved);
+  const int linesAdded = m.hasDiff ? m.diffLinesAdded : m.linesAdded;
+  const int linesRemoved = m.hasDiff ? m.diffLinesRemoved : m.linesRemoved;
+  snprintf(diff, sizeof(diff), "+%d / -%d", linesAdded, linesRemoved);
   snprintf(gs, sizeof(gs), "%dS %dM %dU", m.staged, m.unstaged, m.untracked);
   drawTile(c, 165, 135, 150, 74, "DIFF", m.hasGit, diff, gs, -1, false);
   M5CT_DBG("ov tiles ok");

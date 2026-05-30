@@ -92,10 +92,10 @@ export async function runFlash(args: readonly string[]): Promise<number> {
       }
     })
     process.stdout.write('\n')
+    console.log('m5ct: booting firmware via watchdog reset...')
+    await flasher.resetAfterFlash()
     await flasher.close()
-    console.log('m5ct: flash complete.')
-    console.log('')
-    console.log('⚠  Press RESET once to boot the new firmware.')
+    console.log('m5ct: flash complete; firmware is booting.')
     return 0
   } catch (err) {
     console.error(`m5ct: flash failed: ${(err as Error).message}`)

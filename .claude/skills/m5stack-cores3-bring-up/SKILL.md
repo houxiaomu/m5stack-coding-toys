@@ -7,7 +7,7 @@ description: Use when flashing firmware to M5Stack CoreS3 or CoreS3 SE via Platf
 
 ## Overview
 
-ESP32-S3 + native USB CDC + a pre-flashed UiFlow2 firmware creates a flashing experience where standard `pio run -t upload` *silently does the wrong thing* the first time, and even when it succeeds the chip doesn't auto-restart. The agent cannot solve this alone — it requires a tight loop of "agent does software step → asks human for a specific physical action → verifies → continues". This skill captures both the **specific gotchas** and the **coordination pattern**.
+ESP32-S3 + native USB CDC + a pre-flashed UiFlow2 firmware creates a flashing experience where standard `pio run -t upload` *silently does the wrong thing* the first time, and the default RTS hard reset after upload is unreliable. The agent cannot solve download-mode entry alone — it requires a tight loop of "agent does software step → asks human for a specific physical action → verifies → continues". This skill captures both the **specific gotchas** and the **coordination pattern**.
 
 **Core principle:** treat physical hardware steps as a tool you call through the human. Each request must be a single, unambiguous physical action with a verifiable success criterion.
 
@@ -28,8 +28,7 @@ Agent: build firmware
 Agent: ask human → "double-tap reset" OR "hold reset 3s, green LED blinks once"
 Human: "download mode"
 Agent: pio upload --upload-port /dev/cu.usbmodem1101   ← seize the window NOW
-Agent: ask human → "press reset to boot it"            ← auto-reset DOES NOT WORK
-Human: "reset"
+Agent: esptool.py --port /dev/cu.usbmodem1101 --after watchdog_reset run
 Agent: verify on serial (heartbeat / hello round-trip)
 ```
 
@@ -67,8 +66,12 @@ build_flags =
 
 ## Code-Level Pitfalls
 
-### Auto-reset doesn't work
-esptool prints `Hard resetting via RTS pin...` but CoreS3 uses native USB — no real RTS line reaches the chip. **Always ask the human to press reset after upload.** Do not assume firmware is running until you've seen device-side output.
+### Default RTS reset is unreliable; watchdog reset works after flashing
+esptool's default `Hard resetting via RTS pin...` path can leave CoreS3 SE in ROM/stub mode. After a successful upload, use the ESP32-S3 watchdog reset path to boot the app:
+```bash
+esptool.py --port /dev/cu.usbmodem1101 --after watchdog_reset run
+```
+This was hardware-verified on CoreS3 SE: after upload, `watchdog_reset` returned the daemon to `Connected` without a manual RESET press. It does **not** enter download mode; long-press RESET is still required before flashing.
 
 ### `delay(2000)` after `M5.begin()` in `setup()`
 Give USB CDC ~2 s to enumerate before initializing your dispatcher / transport. Without it, early host→device bytes are lost.
@@ -113,7 +116,7 @@ When something doesn't work, climb the ladder one rung at a time — don't skip:
 | Trying upload without download mode | "Could not configure port" — UiFlow2 holds USB | Always enter download mode first |
 | Adding `--before=usb_reset` to esptool flags | Wedges USB further, port vanishes | Use default reset strategy; rely on manual download mode |
 | Setting `ARDUINO_USB_MODE=0` because "TinyUSB CDC is more standard" | Port name changes to serial-number form; esptool can't re-flash | Use `USB_MODE=1` (HWCDC) for dev |
-| Polling for serial output without asking user to reset | esptool's "Hard resetting" is a no-op; firmware isn't actually running | Ask human to press reset after every flash |
+| Trusting default `Hard resetting via RTS pin...` | Board may stay in ROM/stub mode | After upload, run `--after watchdog_reset run`; then verify daemon reconnects |
 | Using `Date.now()` timestamps without uint64 codec | Messages silently dropped — no error, no log | uint64 everywhere; or send `t:0` for testing |
 | Sending host→device too fast after open | Bytes dropped because CDC not ready | Settle 500–1000 ms after `port.set({dtr:true,rts:true})` |
 | Skipping diagnostic ladder | Hours of debugging the wrong layer | Climb ladder: screen → heartbeat → avail → raw hex → protocol |
@@ -130,7 +133,8 @@ pio run --project-dir firmware -e cores3-se
 ls /dev/cu.usbmodem* && \
   pio run --project-dir firmware -e cores3-se -t upload --upload-port /dev/cu.usbmodem1101
 
-# 4. ASK HUMAN: "Press reset to boot." (auto-reset doesn't work)
+# 4. Boot app without a manual RESET
+esptool.py --port /dev/cu.usbmodem1101 --after watchdog_reset run
 
 # 5. Verify firmware actually runs
 ls /dev/cu.usbmodem*
