@@ -22,6 +22,10 @@ export class FakeStdioTransport extends EventEmitter implements Transport {
     return `fake-stdio:${this.cmd.join(' ')}`
   }
 
+  get kind(): 'fake-stdio' {
+    return 'fake-stdio'
+  }
+
   async open(): Promise<void> {
     if (this.proc) return
     const [bin, ...rest] = this.cmd

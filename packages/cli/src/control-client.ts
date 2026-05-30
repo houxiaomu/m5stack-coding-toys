@@ -13,6 +13,10 @@ export interface DaemonStatus {
     version: string
   }
   state: string
+  transport?: 'serial' | 'ble' | 'fake-stdio' | null
+  transport_label?: string | null
+  reconnecting?: boolean
+  default_device_id?: string | null
   board: string | null
   fw: string | null
   caps: readonly string[]
