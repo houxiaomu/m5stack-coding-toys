@@ -1,6 +1,6 @@
 {
   "board": "cores3-se",
-  "fw_version": "0.3.1",
+  "fw_version": "0.4.0",
   "chip": "esp32s3",
   "flash_size": "8MB",
   "files": [
@@ -11,7 +11,7 @@
   "sha256": {
     "bootloader.bin": "2a71d69b471e20c2bac7fb469f3c6a807b3ebee780e348e5889db0da849ca363",
     "partitions.bin": "bd0f7954aca2ef7d925ee21aaa1f3dc8822d1d6ce5cbbd26a135e5886bfff6ce",
-    "firmware.bin":   "c61454c95d34cab81ecbad7e23e200efc98e47a1bdd3bc7fa02e37a29c46fed9"
+    "firmware.bin":   "023e88eb2712f086f6910066797da059f34fef15aeb62b90a7b74f2f14b80a10"
   },
-  "built_at": "2026-05-30T07:40:42Z"
+  "built_at": "2026-05-30T10:28:31Z"
 }

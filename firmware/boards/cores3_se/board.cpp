@@ -20,7 +20,7 @@ Board g_board{
     /* power     */ &g_power,
     /* transport */ &g_transport,
     /* name      */ "cores3-se",
-    /* fw_ver    */ "0.3.1",
+    /* fw_ver    */ "0.4.0",
 };
 }  // namespace
 

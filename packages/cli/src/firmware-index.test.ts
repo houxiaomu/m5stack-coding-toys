@@ -5,11 +5,11 @@ describe('resolveFirmware', () => {
   it('resolves the pinned default version for a known board', () => {
     const e = resolveFirmware('cores3-se')
     expect(e.board).toBe('cores3-se')
-    expect(e.version).toBe('0.3.1')
+    expect(e.version).toBe('0.4.0')
     expect(e.files.length).toBe(3)
     for (const f of e.files) {
       expect(f.url).toMatch(/^https:\/\//)
-      expect(f.url).toContain('/fw-cores3-se-0.3.1/')
+      expect(f.url).toContain('/fw-cores3-se-0.4.0/')
       expect(f.sha256).toMatch(/^[0-9a-f]{64}$/)
       expect(typeof f.offset).toBe('number')
     }
