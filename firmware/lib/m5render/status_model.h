@@ -68,6 +68,7 @@ struct StatusModel {
   };
   int sessionN = 0;
   int pickerIndex = 0;  // local UI state; not parsed from the wire
+  int sessionPageIndex = 0;  // local Sessions picker page; not parsed from the wire
   SessionSummary sessions[8];
 };
 

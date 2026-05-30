@@ -103,27 +103,40 @@ void test_activity_parses_all_three_values() {
   TEST_ASSERT_EQUAL(static_cast<int>(Activity::NeedsAttention), static_cast<int>(c.activity));
 }
 
-void test_parse_focus_and_sessions() {
+void test_parse_sessions_without_auto_pin() {
   StatusModel m;
   TEST_ASSERT_TRUE(parseStatusFrame(
-    "{\"state\":\"active\",\"focus\":{\"mode\":\"pinned\",\"index\":2,\"total\":3},"
+    "{\"state\":\"active\","
     "\"sessions\":["
-    "{\"index\":0,\"id\":\"auto\",\"name\":\"AUTO\",\"activity\":\"working\",\"auto\":true},"
-    "{\"index\":1,\"id\":\"s1\",\"name\":\"repo-a\",\"activity\":\"awaiting_input\"},"
-    "{\"index\":2,\"id\":\"s2\",\"name\":\"repo-b\",\"activity\":\"needs_attention\","
-    "\"selected\":true,\"pinned\":true}"
+    "{\"index\":1,\"id\":\"pid:111\",\"name\":\"repo-a\",\"activity\":\"awaiting_input\","
+    "\"selected\":true,\"pinned\":true},"
+    "{\"index\":2,\"id\":\"pid:222\",\"name\":\"repo-b\",\"activity\":\"needs_attention\","
+    "\"auto\":true}"
     "]}",
     m));
-  TEST_ASSERT_TRUE(m.hasFocus);
-  TEST_ASSERT_TRUE(m.focusPinned);
-  TEST_ASSERT_EQUAL(2, m.focusIndex);
-  TEST_ASSERT_EQUAL(3, m.focusTotal);
-  TEST_ASSERT_EQUAL(3, m.sessionN);
-  TEST_ASSERT_EQUAL_STRING("repo-b", m.sessions[2].name);
-  TEST_ASSERT_TRUE(m.sessions[2].selected);
-  TEST_ASSERT_TRUE(m.sessions[2].pinned);
+  TEST_ASSERT_EQUAL(2, m.sessionN);
+  TEST_ASSERT_EQUAL_STRING("pid:111", m.sessions[0].id);
+  TEST_ASSERT_EQUAL_STRING("repo-a", m.sessions[0].name);
+  TEST_ASSERT_TRUE(m.sessions[0].selected);
+  TEST_ASSERT_EQUAL(static_cast<int>(Activity::AwaitingInput),
+                    static_cast<int>(m.sessions[0].activity));
+  TEST_ASSERT_EQUAL_STRING("pid:222", m.sessions[1].id);
+  TEST_ASSERT_EQUAL_STRING("repo-b", m.sessions[1].name);
   TEST_ASSERT_EQUAL(static_cast<int>(Activity::NeedsAttention),
-                    static_cast<int>(m.sessions[2].activity));
+                    static_cast<int>(m.sessions[1].activity));
+}
+
+void test_session_page_index_clamps_after_sessions_parse() {
+  StatusModel m;
+  m.sessionPageIndex = 4;
+  TEST_ASSERT_TRUE(parseStatusFrame(
+    "{\"state\":\"active\","
+    "\"sessions\":["
+    "{\"index\":1,\"id\":\"s1\",\"name\":\"repo-a\",\"activity\":\"working\"},"
+    "{\"index\":2,\"id\":\"s2\",\"name\":\"repo-b\",\"activity\":\"working\"}"
+    "]}",
+    m));
+  TEST_ASSERT_EQUAL(0, m.sessionPageIndex);
 }
 
 void setup() {
@@ -136,7 +149,8 @@ void setup() {
   RUN_TEST(test_git_diff_parses_summary_and_clamps_top_files);
   RUN_TEST(test_activity_defaults_to_working_when_absent);
   RUN_TEST(test_activity_parses_all_three_values);
-  RUN_TEST(test_parse_focus_and_sessions);
+  RUN_TEST(test_parse_sessions_without_auto_pin);
+  RUN_TEST(test_session_page_index_clamps_after_sessions_parse);
   UNITY_END();
 }
 void loop() {}

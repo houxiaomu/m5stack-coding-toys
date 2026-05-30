@@ -125,9 +125,12 @@ bool parseStatusFrame(JsonObjectConst doc, StatusModel& m) {
       s.autoMode = item["auto"] | false;
     }
     if (m.pickerIndex >= m.sessionN) m.pickerIndex = 0;
+    const int maxSessionPage = m.sessionN > 0 ? (m.sessionN - 1) / 3 : 0;
+    if (m.sessionPageIndex > maxSessionPage) m.sessionPageIndex = maxSessionPage;
   } else {
     m.sessionN = 0;
     m.pickerIndex = 0;
+    m.sessionPageIndex = 0;
   }
   return true;
 }
