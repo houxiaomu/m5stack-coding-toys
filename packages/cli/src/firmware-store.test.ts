@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { FirmwareEntry } from './firmware-index.js'
-import { ensureFirmware } from './firmware-store.js'
+import { ensureFirmware, sha256 } from './firmware-store.js'
 
 function sha(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex')
@@ -53,5 +53,14 @@ describe('ensureFirmware', () => {
     const { e, cache } = entry(Buffer.from('BINDATA'))
     const fetchFn = vi.fn(async () => new Uint8Array(Buffer.from('CORRUPT')))
     await expect(ensureFirmware(e, cache, fetchFn)).rejects.toThrow(/sha256/)
+  })
+})
+
+describe('sha256', () => {
+  it('hashes bytes to a 64-char hex digest matching node crypto', () => {
+    const buf = Buffer.from('BINDATA')
+    const expected = createHash('sha256').update(buf).digest('hex')
+    expect(sha256(buf)).toBe(expected)
+    expect(sha256(buf)).toMatch(/^[0-9a-f]{64}$/)
   })
 })

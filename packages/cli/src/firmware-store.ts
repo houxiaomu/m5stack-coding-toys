@@ -15,7 +15,7 @@ const nodeFetch: FetchFn = async (url) => {
   return new Uint8Array(await res.arrayBuffer())
 }
 
-function sha256(buf: Buffer): string {
+export function sha256(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex')
 }
 
