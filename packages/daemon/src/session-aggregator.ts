@@ -15,8 +15,7 @@ interface CostSample {
   costUsd: number
 }
 
-type FocusMode = 'auto' | 'pinned'
-export type FocusRequest = { target: 'auto' } | { target: 'session'; sessionId: string }
+export type FocusRequest = { target: 'session'; sessionId: string }
 
 interface TerminalSlot {
   id: string
@@ -50,9 +49,7 @@ export class SessionAggregator {
   private slots = new Map<string, TerminalSlot>()
   private sessionAliases = new Map<string, string>()
   private order: string[] = []
-  private focusMode: FocusMode = 'auto'
-  private pinnedSlotId: string | undefined
-  private foregroundSlotId: string | undefined
+  private selectedSlotId: string | undefined
   private sentIdle = true
 
   private todayBaseCost = 0
@@ -133,14 +130,7 @@ export class SessionAggregator {
   }
 
   async setFocus(req: FocusRequest): Promise<void> {
-    if (req.target === 'auto') {
-      this.focusMode = 'auto'
-      this.pinnedSlotId = undefined
-    } else if (this.slots.has(req.sessionId)) {
-      this.focusMode = 'pinned'
-      this.pinnedSlotId = req.sessionId
-      this.foregroundSlotId = req.sessionId
-    }
+    if (this.slots.has(req.sessionId)) this.selectedSlotId = req.sessionId
     await this.pushSelectedFrame()
   }
 
@@ -166,7 +156,7 @@ export class SessionAggregator {
     if (this.slots.size === 0) {
       if (this.sentIdle) return
       this.sentIdle = true
-      this.foregroundSlotId = undefined
+      this.selectedSlotId = undefined
       log.info('all sessions ended → idle')
       void this.sendStatus({ state: 'idle' })
       return
@@ -214,12 +204,7 @@ export class SessionAggregator {
     for (const sessionId of tracked.knownSessionIds) {
       if (this.sessionAliases.get(sessionId) === id) this.sessionAliases.delete(sessionId)
     }
-    if (this.pinnedSlotId === id) {
-      this.focusMode = 'auto'
-      this.pinnedSlotId = undefined
-      this.foregroundSlotId = undefined
-    }
-    if (this.foregroundSlotId === id) this.foregroundSlotId = undefined
+    if (this.selectedSlotId === id) this.selectedSlotId = undefined
   }
 
   private sessionForHook(sessionId?: string): TerminalSlot | null {
@@ -233,7 +218,7 @@ export class SessionAggregator {
   private async pushSelectedFrame(): Promise<void> {
     const selected = this.selectForeground()
     if (!selected?.lastFrame) return
-    this.foregroundSlotId = selected.id
+    this.selectedSlotId = selected.id
     await this.sendStatus(this.decorateFrame(selected.lastFrame, selected))
   }
 
@@ -246,13 +231,8 @@ export class SessionAggregator {
   }
 
   private selectForeground(): TerminalSlot | null {
-    if (this.focusMode === 'pinned' && this.pinnedSlotId) {
-      return this.slots.get(this.pinnedSlotId) ?? null
-    }
-    const attention = this.orderedSlots().find((s) => s.activity === 'needs_attention')
-    if (attention) return attention
-    if (this.foregroundSlotId) {
-      const current = this.slots.get(this.foregroundSlotId)
+    if (this.selectedSlotId) {
+      const current = this.slots.get(this.selectedSlotId)
       if (current) return current
     }
     return this.orderedSlots()[0] ?? null
@@ -271,29 +251,16 @@ export class SessionAggregator {
     }
     const live = this.orderedSlots()
     if (live.length < 2) return stamped
-    const selectedIndex = live.findIndex((s) => s.id === selected.id) + 1
     const names = this.displayNames(live)
     return {
       ...stamped,
-      focus: { mode: this.focusMode, index: selectedIndex, total: live.length },
-      sessions: [
-        {
-          index: 0,
-          id: 'auto',
-          name: 'AUTO',
-          activity: 'working',
-          auto: true,
-          selected: this.focusMode === 'auto',
-        },
-        ...live.slice(0, 7).map((s, i) => ({
-          index: i + 1,
-          id: s.id,
-          name: names.get(s.id) ?? this.sessionName(s),
-          activity: s.activity,
-          selected: s.id === selected.id,
-          pinned: this.focusMode === 'pinned' && this.pinnedSlotId === s.id,
-        })),
-      ],
+      sessions: live.slice(0, 8).map((s, i) => ({
+        index: i + 1,
+        id: s.id,
+        name: names.get(s.id) ?? this.sessionName(s),
+        activity: s.activity,
+        selected: s.id === selected.id,
+      })),
     }
   }
 
@@ -348,8 +315,8 @@ export class SessionAggregator {
 
   private persist(): void {
     this.store?.save({
-      burnHistory: this.foregroundSlotId
-        ? (this.slots.get(this.foregroundSlotId)?.burnHistory ?? [])
+      burnHistory: this.selectedSlotId
+        ? (this.slots.get(this.selectedSlotId)?.burnHistory ?? [])
         : [],
       todayCost: round2(this.currentTodayCost()),
       todayDay: this.todayDay,

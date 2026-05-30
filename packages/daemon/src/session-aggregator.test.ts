@@ -275,7 +275,7 @@ describe('SessionAggregator', () => {
     expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('working')
   })
 
-  it('keeps separate foreground frames per session and emits session metadata', async () => {
+  it('keeps separate foreground frames per session and emits real session metadata only', async () => {
     const sess = fakeSession()
     const agg = new SessionAggregator(() => sess as never, {
       enrich: async () => undefined,
@@ -302,15 +302,17 @@ describe('SessionAggregator', () => {
 
     const frame = sess.send.mock.calls.at(-1)[0]
     expect(frame.p.model.short).toBe('A')
-    expect(frame.p.focus).toEqual({ mode: 'auto', index: 1, total: 2 })
+    expect(frame.p.focus).toBeUndefined()
     expect(frame.p.sessions.map((s: { id: string; name: string }) => [s.id, s.name])).toEqual([
-      ['auto', 'AUTO'],
       ['pid:111', 'a'],
       ['pid:222', 'b'],
     ])
+    expect(frame.p.sessions.some((s: { auto?: boolean; pinned?: boolean }) => s.auto || s.pinned)).toBe(
+      false,
+    )
   })
 
-  it('auto foregrounds earliest needs_attention session', async () => {
+  it('does not auto foreground another session that needs attention', async () => {
     const sess = fakeSession()
     const agg = new SessionAggregator(() => sess as never, {
       enrich: async () => undefined,
@@ -319,12 +321,10 @@ describe('SessionAggregator', () => {
     await agg.ingest({ session_id: 's2', model: { display_name: 'B' } }, 222, () => 2000)
 
     await agg.ingestHookEvent('Notification', 's2')
-    expect(sess.send.mock.calls.at(-1)[0].p.model.short).toBe('B')
-    await agg.ingestHookEvent('Notification', 's1')
     expect(sess.send.mock.calls.at(-1)[0].p.model.short).toBe('A')
   })
 
-  it('pinned mode ignores another session needing attention', async () => {
+  it('selected mode ignores another session needing attention', async () => {
     const sess = fakeSession()
     const agg = new SessionAggregator(() => sess as never, {
       enrich: async () => undefined,
@@ -336,10 +336,25 @@ describe('SessionAggregator', () => {
     await agg.ingestHookEvent('Notification', 's2')
     const frame = sess.send.mock.calls.at(-1)[0]
     expect(frame.p.model.short).toBe('A')
-    expect(frame.p.focus.mode).toBe('pinned')
+    expect(frame.p.focus).toBeUndefined()
     expect(frame.p.sessions.find((s: { id: string }) => s.id === 'pid:222').activity).toBe(
       'needs_attention',
     )
+  })
+
+  it('selects a session from a device focus event', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+    await agg.ingest({ session_id: 's1', model: { display_name: 'A' } }, 111, () => 1000)
+    await agg.ingest({ session_id: 's2', model: { display_name: 'B' } }, 222, () => 2000)
+
+    await agg.setFocus({ target: 'session', sessionId: 'pid:222' })
+
+    const frame = sess.send.mock.calls.at(-1)[0]
+    expect(frame.p.model.short).toBe('B')
+    expect(frame.p.sessions.find((s: { id: string }) => s.id === 'pid:222').selected).toBe(true)
   })
 
   it('updates one terminal slot when the same pid changes session id', async () => {
@@ -377,9 +392,8 @@ describe('SessionAggregator', () => {
     )
 
     const frame = sess.send.mock.calls.at(-1)[0]
-    expect(frame.p.focus).toEqual({ mode: 'auto', index: 1, total: 2 })
+    expect(frame.p.focus).toBeUndefined()
     expect(frame.p.sessions.map((s: { id: string; name: string }) => [s.id, s.name])).toEqual([
-      ['auto', 'AUTO'],
       ['pid:83876', 'pm'],
       ['pid:34930', 'm5toys'],
     ])
@@ -411,7 +425,7 @@ describe('SessionAggregator', () => {
     await agg.ingest({ session_id: 's2', workspace: { current_dir: '/b/pm' } }, 222, () => 2000)
 
     const frame = sess.send.mock.calls.at(-1)[0]
-    expect(frame.p.sessions.map((s: { name: string }) => s.name)).toEqual(['AUTO', 'pm', 'pm #2'])
+    expect(frame.p.sessions.map((s: { name: string }) => s.name)).toEqual(['pm', 'pm #2'])
   })
 
   it('ignores hook events without a known session id', async () => {
