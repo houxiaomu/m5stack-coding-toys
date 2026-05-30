@@ -1,6 +1,18 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { runFlash } from './cmd-flash.js'
 import type { PreparedFirmware } from './firmware-source.js'
+
+// A socket path that actually exists on disk, so runFlash's existsSync() gate
+// treats the daemon as present and the injected `call` stub drives the rest.
+function liveSocket(): string {
+  const dir = mkdtempSync(resolve(tmpdir(), 'm5ct-sock-'))
+  const path = resolve(dir, 'daemon.sock')
+  writeFileSync(path, '')
+  return path
+}
 
 function io() {
   const logs: string[] = []
@@ -146,5 +158,50 @@ describe('runFlash flag parsing', () => {
     expect(code).toBe(1)
     expect(flash).not.toHaveBeenCalled()
     expect(t.errs.join(' ')).toMatch(/preparation failed/)
+  })
+})
+
+describe('runFlash board consistency check', () => {
+  // call stub that reports a connected board of cardputer-adv.
+  function daemonCall(board: string) {
+    return vi.fn(async (_sock: string, msg: { op?: string }) => {
+      if (msg.op === 'status') return { state: 'Connected', board, fw: '1.0.0' }
+      if (msg.op === 'flashHold') return { ok: true }
+      if (msg.op === 'flashRelease') return { ok: true }
+      throw new Error(`unexpected op ${msg.op}`)
+    })
+  }
+
+  it('refuses to flash when source board does not match the device and --force is absent', async () => {
+    const t = io()
+    // PREP.board is cores3-se; daemon reports cardputer-adv → mismatch.
+    const prepare = vi.fn(async () => PREP)
+    const flash = vi.fn(async () => 0)
+    const call = daemonCall('cardputer-adv')
+    const code = await runFlash([], { io: t.io, prepare, call, flash, socket: liveSocket() })
+    expect(code).toBe(1)
+    expect(flash).not.toHaveBeenCalled()
+    expect(call).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ op: 'flashHold' }),
+    )
+    expect(t.errs.join(' ')).toMatch(/does not match connected device/)
+  })
+
+  it('proceeds past the mismatch when --force is given', async () => {
+    const t = io()
+    const prepare = vi.fn(async () => PREP)
+    const flash = vi.fn(async () => 0)
+    const call = daemonCall('cardputer-adv')
+    const code = await runFlash(['--force'], {
+      io: t.io,
+      prepare,
+      call,
+      flash,
+      socket: liveSocket(),
+    })
+    expect(code).toBe(0)
+    expect(flash).toHaveBeenCalledTimes(1)
+    expect(t.logs.join('\n')).toMatch(/--force/)
   })
 })
