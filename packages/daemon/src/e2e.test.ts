@@ -137,7 +137,7 @@ describe('m5ctd e2e (daemon ↔ fake-firmware via socket)', () => {
     }
   }, 15000)
 
-  it('auto foregrounds the earliest needs_attention session', async () => {
+  it('does not foreground another session that needs attention', async () => {
     h = await startDaemon()
     await new Promise((r) => setTimeout(r, 1500))
 
@@ -161,17 +161,18 @@ describe('m5ctd e2e (daemon ↔ fake-firmware via socket)', () => {
 
     await send(h.socketPath, { event: 'Notification', sessionId: 's2' })
     await new Promise((r) => setTimeout(r, 300))
-    expect(lastFakeStatus(h.output())).toMatchObject({
-      activity: 'needs_attention',
-      model: { short: 'B' },
+    const afterS2 = lastFakeStatus(h.output()) as { sessions?: { id: string; activity: string }[] }
+    expect(afterS2).toMatchObject({
+      activity: 'working',
+      model: { short: 'A' },
     })
+    expect(afterS2.sessions?.find((s) => s.id === 'pid:222')?.activity).toBe('needs_attention')
 
     await send(h.socketPath, { event: 'Notification', sessionId: 's1' })
     await new Promise((r) => setTimeout(r, 300))
     expect(lastFakeStatus(h.output())).toMatchObject({
       activity: 'needs_attention',
       model: { short: 'A' },
-      focus: { mode: 'auto', index: 1, total: 2 },
     })
   }, 15000)
 
@@ -209,9 +210,8 @@ describe('m5ctd e2e (daemon ↔ fake-firmware via socket)', () => {
     await new Promise((r) => setTimeout(r, 500))
 
     const status = lastFakeStatus(h.output()) as { focus?: unknown; sessions?: unknown[] }
-    expect(status.focus).toEqual({ mode: 'auto', index: 1, total: 2 })
+    expect(status.focus).toBeUndefined()
     expect(status.sessions?.map((s: { id: string; name: string }) => [s.id, s.name])).toEqual([
-      ['auto', 'AUTO'],
       ['pid:83876', 'pm'],
       ['pid:34930', 'm5toys'],
     ])
