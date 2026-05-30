@@ -38,6 +38,11 @@ function handle(board: Board, raw: string): void {
     throw err
   }
   if (env.k === 'hello') {
+    // env.p is the cross-kind payload union here; narrow to the time field.
+    const time = (env.p as { time?: { utc_ms: number; offset_min: number } }).time
+    if (time) {
+      console.error(`[fake] rtc sync: utc_ms=${time.utc_ms} offset_min=${time.offset_min}`)
+    }
     send(
       encode({
         k: 'hello.ack',
