@@ -39,6 +39,15 @@ type PendingResolver = {
 }
 
 /**
+ * Derive the device clock-set payload from a host Date.
+ * `offset_min` is minutes EAST of UTC (UTC+8 → +480); getTimezoneOffset()
+ * returns minutes WEST (positive for west), so we negate it.
+ */
+export function deriveDeviceTime(now: Date): { utc_ms: number; offset_min: number } {
+  return { utc_ms: now.getTime(), offset_min: -now.getTimezoneOffset() }
+}
+
+/**
  * DeviceSession owns a Transport, performs hello/heartbeat, and tracks pending
  * RPC ids. Emits 'hello' once handshake completes, 'event' for unsolicited
  * device→host messages, 'disconnect' when transport drops.
@@ -78,7 +87,7 @@ export class DeviceSession extends EventEmitter {
     log.debug('transport connected, sending hello')
 
     const helloResult = await this.request(
-      { k: 'hello', p: { caps: ['display', 'notify'] } },
+      { k: 'hello', p: { caps: ['display', 'notify'], time: deriveDeviceTime(new Date()) } },
       this.cfg.helloTimeoutMs,
     )
     if (helloResult.k !== 'hello.ack') {
