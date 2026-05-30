@@ -98,19 +98,6 @@ bool parseStatusFrame(JsonObjectConst doc, StatusModel& m) {
     m.prNumber = doc["pr"]["number"] | 0;
     copyStr(m.prReview, sizeof(m.prReview), doc["pr"]["reviewState"] | "");
   }
-  if (doc["focus"].is<JsonObjectConst>()) {
-    JsonObjectConst focus = doc["focus"].as<JsonObjectConst>();
-    m.hasFocus = true;
-    const char* mode = focus["mode"] | "auto";
-    m.focusPinned = strcmp(mode, "pinned") == 0;
-    m.focusIndex = focus["index"] | 0;
-    m.focusTotal = focus["total"] | 0;
-  } else {
-    m.hasFocus = false;
-    m.focusPinned = false;
-    m.focusIndex = 0;
-    m.focusTotal = 0;
-  }
   if (doc["sessions"].is<JsonArrayConst>()) {
     m.sessionN = 0;
     for (JsonObjectConst item : doc["sessions"].as<JsonArrayConst>()) {
@@ -121,15 +108,11 @@ bool parseStatusFrame(JsonObjectConst doc, StatusModel& m) {
       copyStr(s.name, sizeof(s.name), item["name"] | "");
       s.activity = parseActivity(item["activity"] | "working");
       s.selected = item["selected"] | false;
-      s.pinned = item["pinned"] | false;
-      s.autoMode = item["auto"] | false;
     }
-    if (m.pickerIndex >= m.sessionN) m.pickerIndex = 0;
     const int maxSessionPage = m.sessionN > 0 ? (m.sessionN - 1) / 3 : 0;
     if (m.sessionPageIndex > maxSessionPage) m.sessionPageIndex = maxSessionPage;
   } else {
     m.sessionN = 0;
-    m.pickerIndex = 0;
     m.sessionPageIndex = 0;
   }
   return true;

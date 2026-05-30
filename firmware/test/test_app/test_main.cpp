@@ -197,62 +197,148 @@ void test_tap_without_touch_returns_unsupported() {
   TEST_ASSERT_TRUE(tx.find("\"err\":\"touch_unsupported\"") != std::string::npos);
 }
 
-void test_sessions_page_top_tap_moves_highlight() {
+void test_multi_session_first_status_opens_sessions_page() {
   MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
   Board b = makeTouchBoard(t, d, i);
   App app(c, &b); app.setNowFn(mockNow);
   const char* active =
     "{\"v\":1,\"k\":\"status\",\"t\":0,\"p\":{\"state\":\"active\","
     "\"sessions\":["
-    "{\"index\":0,\"id\":\"auto\",\"name\":\"AUTO\",\"activity\":\"working\",\"auto\":true},"
     "{\"index\":1,\"id\":\"s1\",\"name\":\"repo-a\",\"activity\":\"working\"},"
     "{\"index\":2,\"id\":\"s2\",\"name\":\"repo-b\",\"activity\":\"working\"}"
     "]}}";
   app.handleLine(active, std::strlen(active));
-  for (int n = 0; n < 4; ++n) {
-    const char* pageTap =
-      "{\"v\":1,\"k\":\"tap\",\"t\":1,\"id\":\"p\",\"p\":{\"x\":160,\"y\":120,\"duration_ms\":50}}";
-    app.handleLine(pageTap, std::strlen(pageTap));
-  }
-  TEST_ASSERT_EQUAL(static_cast<int>(PageId::Sessions), static_cast<int>(app.page()));
-
-  const char* topTap =
-    "{\"v\":1,\"k\":\"tap\",\"t\":2,\"id\":\"m\",\"p\":{\"x\":160,\"y\":20,\"duration_ms\":50}}";
-  app.handleLine(topTap, std::strlen(topTap));
-  TEST_ASSERT_EQUAL(1, app.pickerIndex());
   TEST_ASSERT_EQUAL(static_cast<int>(PageId::Sessions), static_cast<int>(app.page()));
 }
 
-void test_sessions_page_bottom_tap_sends_focus_event() {
+void test_sessions_page_tap_row_selects_session() {
   MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
   Board b = makeTouchBoard(t, d, i);
   App app(c, &b); app.setNowFn(mockNow);
   const char* active =
     "{\"v\":1,\"k\":\"status\",\"t\":0,\"p\":{\"state\":\"active\","
     "\"sessions\":["
-    "{\"index\":0,\"id\":\"auto\",\"name\":\"AUTO\",\"activity\":\"working\",\"auto\":true},"
     "{\"index\":1,\"id\":\"s1\",\"name\":\"repo-a\",\"activity\":\"working\"},"
     "{\"index\":2,\"id\":\"s2\",\"name\":\"repo-b\",\"activity\":\"working\"}"
     "]}}";
   app.handleLine(active, std::strlen(active));
-  for (int n = 0; n < 4; ++n) {
-    const char* pageTap =
-      "{\"v\":1,\"k\":\"tap\",\"t\":1,\"id\":\"p\",\"p\":{\"x\":160,\"y\":120,\"duration_ms\":50}}";
-    app.handleLine(pageTap, std::strlen(pageTap));
-  }
-  const char* topTap =
-    "{\"v\":1,\"k\":\"tap\",\"t\":2,\"id\":\"m\",\"p\":{\"x\":160,\"y\":20,\"duration_ms\":50}}";
-  app.handleLine(topTap, std::strlen(topTap));
-  t.drain_tx();
-
-  const char* bottomTap =
-    "{\"v\":1,\"k\":\"tap\",\"t\":3,\"id\":\"c\",\"p\":{\"x\":160,\"y\":220,\"duration_ms\":50}}";
-  app.handleLine(bottomTap, std::strlen(bottomTap));
+  const char* row2 =
+    "{\"v\":1,\"k\":\"tap\",\"t\":2,\"id\":\"r\",\"p\":{\"x\":160,\"y\":112,\"duration_ms\":50}}";
+  app.handleLine(row2, std::strlen(row2));
   const std::string tx = t.drain_tx();
   TEST_ASSERT_TRUE(tx.find("\"k\":\"device.event\"") != std::string::npos);
-  TEST_ASSERT_TRUE(tx.find("\"kind\":\"focus\"") != std::string::npos);
   TEST_ASSERT_TRUE(tx.find("\"target\":\"session\"") != std::string::npos);
-  TEST_ASSERT_TRUE(tx.find("\"sessionId\":\"s1\"") != std::string::npos);
+  TEST_ASSERT_TRUE(tx.find("\"sessionId\":\"s2\"") != std::string::npos);
+  TEST_ASSERT_EQUAL(static_cast<int>(PageId::Overview), static_cast<int>(app.page()));
+}
+
+void test_sessions_page_empty_tap_does_nothing() {
+  MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
+  Board b = makeTouchBoard(t, d, i);
+  App app(c, &b); app.setNowFn(mockNow);
+  const char* active =
+    "{\"v\":1,\"k\":\"status\",\"t\":0,\"p\":{\"state\":\"active\","
+    "\"sessions\":["
+    "{\"index\":1,\"id\":\"s1\",\"name\":\"repo-a\",\"activity\":\"working\"},"
+    "{\"index\":2,\"id\":\"s2\",\"name\":\"repo-b\",\"activity\":\"working\"}"
+    "]}}";
+  app.handleLine(active, std::strlen(active));
+  t.drain_tx();
+  const char* emptyTap =
+    "{\"v\":1,\"k\":\"tap\",\"t\":2,\"id\":\"e\",\"p\":{\"x\":5,\"y\":120,\"duration_ms\":50}}";
+  app.handleLine(emptyTap, std::strlen(emptyTap));
+  const std::string tx = t.drain_tx();
+  TEST_ASSERT_TRUE(tx.find("\"k\":\"tap.ack\"") != std::string::npos);
+  TEST_ASSERT_TRUE(tx.find("\"k\":\"device.event\"") == std::string::npos);
+  TEST_ASSERT_EQUAL(static_cast<int>(PageId::Sessions), static_cast<int>(app.page()));
+}
+
+void test_sessions_page_next_tap_advances_picker_page() {
+  MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
+  Board b = makeTouchBoard(t, d, i);
+  App app(c, &b); app.setNowFn(mockNow);
+  const char* active =
+    "{\"v\":1,\"k\":\"status\",\"t\":0,\"p\":{\"state\":\"active\","
+    "\"sessions\":["
+    "{\"index\":1,\"id\":\"s1\",\"name\":\"repo-a\",\"activity\":\"working\"},"
+    "{\"index\":2,\"id\":\"s2\",\"name\":\"repo-b\",\"activity\":\"working\"},"
+    "{\"index\":3,\"id\":\"s3\",\"name\":\"repo-c\",\"activity\":\"working\"},"
+    "{\"index\":4,\"id\":\"s4\",\"name\":\"repo-d\",\"activity\":\"working\"}"
+    "]}}";
+  app.handleLine(active, std::strlen(active));
+  const char* nextTap =
+    "{\"v\":1,\"k\":\"tap\",\"t\":2,\"id\":\"n\",\"p\":{\"x\":160,\"y\":222,\"duration_ms\":50}}";
+  app.handleLine(nextTap, std::strlen(nextTap));
+  TEST_ASSERT_EQUAL(1, app.sessionPageIndex());
+  TEST_ASSERT_EQUAL(static_cast<int>(PageId::Sessions), static_cast<int>(app.page()));
+}
+
+void test_detail_header_tap_returns_to_sessions_page() {
+  MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
+  Board b = makeTouchBoard(t, d, i);
+  App app(c, &b); app.setNowFn(mockNow);
+  const char* active =
+    "{\"v\":1,\"k\":\"status\",\"t\":0,\"p\":{\"state\":\"active\","
+    "\"sessions\":["
+    "{\"index\":1,\"id\":\"s1\",\"name\":\"repo-a\",\"activity\":\"working\"},"
+    "{\"index\":2,\"id\":\"s2\",\"name\":\"repo-b\",\"activity\":\"working\"}"
+    "]}}";
+  app.handleLine(active, std::strlen(active));
+  const char* row1 =
+    "{\"v\":1,\"k\":\"tap\",\"t\":2,\"id\":\"r\",\"p\":{\"x\":160,\"y\":60,\"duration_ms\":50}}";
+  app.handleLine(row1, std::strlen(row1));
+  TEST_ASSERT_EQUAL(static_cast<int>(PageId::Overview), static_cast<int>(app.page()));
+  const char* headerTap =
+    "{\"v\":1,\"k\":\"tap\",\"t\":3,\"id\":\"h\",\"p\":{\"x\":160,\"y\":16,\"duration_ms\":50}}";
+  app.handleLine(headerTap, std::strlen(headerTap));
+  TEST_ASSERT_EQUAL(static_cast<int>(PageId::Sessions), static_cast<int>(app.page()));
+}
+
+void test_workspace_tap_returns_to_sessions_page_when_multi_session() {
+  MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
+  Board b = makeTouchBoard(t, d, i);
+  App app(c, &b); app.setNowFn(mockNow);
+  const char* active =
+    "{\"v\":1,\"k\":\"status\",\"t\":0,\"p\":{\"state\":\"active\","
+    "\"sessions\":["
+    "{\"index\":1,\"id\":\"s1\",\"name\":\"repo-a\",\"activity\":\"working\"},"
+    "{\"index\":2,\"id\":\"s2\",\"name\":\"repo-b\",\"activity\":\"working\"}"
+    "]}}";
+  app.handleLine(active, std::strlen(active));
+  const char* row1 =
+    "{\"v\":1,\"k\":\"tap\",\"t\":2,\"id\":\"r\",\"p\":{\"x\":160,\"y\":60,\"duration_ms\":50}}";
+  app.handleLine(row1, std::strlen(row1));
+  const char* bodyTap =
+    "{\"v\":1,\"k\":\"tap\",\"t\":3,\"id\":\"b\",\"p\":{\"x\":160,\"y\":120,\"duration_ms\":50}}";
+  app.handleLine(bodyTap, std::strlen(bodyTap));  // Cost
+  app.handleLine(bodyTap, std::strlen(bodyTap));  // Limits
+  app.handleLine(bodyTap, std::strlen(bodyTap));  // Workspace
+  TEST_ASSERT_EQUAL(static_cast<int>(PageId::Workspace), static_cast<int>(app.page()));
+  app.handleLine(bodyTap, std::strlen(bodyTap));
+  TEST_ASSERT_EQUAL(static_cast<int>(PageId::Sessions), static_cast<int>(app.page()));
+}
+
+void test_non_current_session_activity_update_does_not_leave_detail_page() {
+  MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
+  Board b = makeTouchBoard(t, d, i);
+  App app(c, &b); app.setNowFn(mockNow);
+  const char* active =
+    "{\"v\":1,\"k\":\"status\",\"t\":0,\"p\":{\"state\":\"active\","
+    "\"sessions\":["
+    "{\"index\":1,\"id\":\"s1\",\"name\":\"repo-a\",\"activity\":\"working\",\"selected\":true},"
+    "{\"index\":2,\"id\":\"s2\",\"name\":\"repo-b\",\"activity\":\"working\"}"
+    "]}}";
+  app.handleLine(active, std::strlen(active));
+  const char* row1 =
+    "{\"v\":1,\"k\":\"tap\",\"t\":2,\"id\":\"r\",\"p\":{\"x\":160,\"y\":60,\"duration_ms\":50}}";
+  app.handleLine(row1, std::strlen(row1));
+  const char* update =
+    "{\"v\":1,\"k\":\"status\",\"t\":4,\"p\":{\"state\":\"active\","
+    "\"sessions\":["
+    "{\"index\":1,\"id\":\"s1\",\"name\":\"repo-a\",\"activity\":\"working\",\"selected\":true},"
+    "{\"index\":2,\"id\":\"s2\",\"name\":\"repo-b\",\"activity\":\"needs_attention\"}"
+    "]}}";
+  app.handleLine(update, std::strlen(update));
   TEST_ASSERT_EQUAL(static_cast<int>(PageId::Overview), static_cast<int>(app.page()));
 }
 
@@ -271,7 +357,12 @@ int main(int, char**) {
   RUN_TEST(test_tap_does_not_advance_page_when_linked);
   RUN_TEST(test_tap_out_of_bounds_returns_error);
   RUN_TEST(test_tap_without_touch_returns_unsupported);
-  RUN_TEST(test_sessions_page_top_tap_moves_highlight);
-  RUN_TEST(test_sessions_page_bottom_tap_sends_focus_event);
+  RUN_TEST(test_multi_session_first_status_opens_sessions_page);
+  RUN_TEST(test_sessions_page_tap_row_selects_session);
+  RUN_TEST(test_sessions_page_empty_tap_does_nothing);
+  RUN_TEST(test_sessions_page_next_tap_advances_picker_page);
+  RUN_TEST(test_detail_header_tap_returns_to_sessions_page);
+  RUN_TEST(test_workspace_tap_returns_to_sessions_page_when_multi_session);
+  RUN_TEST(test_non_current_session_activity_update_does_not_leave_detail_page);
   return UNITY_END();
 }

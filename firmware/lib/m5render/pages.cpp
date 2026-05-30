@@ -54,8 +54,7 @@ static const char* basenameOf(const char* path);
 static const char* selectedSessionName(const StatusModel& m) {
   for (int i = 0; i < m.sessionN; ++i) {
     const auto& s = m.sessions[i];
-    if (s.autoMode) continue;
-    if ((s.selected || s.pinned) && s.name[0]) return s.name;
+    if (s.selected && s.name[0]) return s.name;
   }
   return nullptr;
 }
@@ -79,13 +78,6 @@ void renderHeader(PageId id, const StatusModel& m, Canvas& c) {
   c.fillCircle(15, 17, 4, color::accent);
 
   c.text(headerTitle(id, m), 26, 17, Font::Title, Align::MiddleLeft, color::ink);
-
-  if (id != PageId::Sessions && m.hasFocus && m.focusTotal >= 2) {
-    char focus[20];
-    snprintf(focus, sizeof(focus), "%s %d/%d",
-             m.focusPinned ? "PINNED" : "AUTO", m.focusIndex, m.focusTotal);
-    c.text(focus, 170, 17, Font::Label, Align::MiddleCenter, color::ink2);
-  }
 
   // Activity badge top-right. Color + label come from m.activity; brightness is
   // the app's animation phase (255 = full color). Context warning is NOT shown
@@ -425,22 +417,35 @@ static void drawSessions(const StatusModel& m, const DeviceInfo& d, Canvas& c) {
     return;
   }
 
-  const int maxRows = m.sessionN < 5 ? m.sessionN : 5;
-  int y = 48;
-  for (int i = 0; i < maxRows; ++i) {
+  const int totalPages = sessionPageCountFor(m);
+  const int page = m.sessionPageIndex < totalPages ? m.sessionPageIndex : totalPages - 1;
+  const int start = page * kSessionRowsPerPage;
+  int y = kSessionRowY;
+  for (int row = 0; row < kSessionRowsPerPage; ++row) {
+    const int i = start + row;
+    if (i >= m.sessionN) break;
     const auto& s = m.sessions[i];
-    const bool cursor = i == m.pickerIndex;
-    const uint16_t border = s.pinned ? color::accent : (s.selected ? color::ink2 : color::cardLine);
-    c.fillRoundRect(10, y, 300, 27, 4, cursor ? color::accSoft : color::card);
-    c.drawRoundRect(10, y, 300, 27, 4, border);
-    c.text(s.name[0] ? s.name : kDash, 18, y + 14, Font::Label,
+    const uint16_t border = s.selected ? color::ink2 : color::cardLine;
+    c.fillRoundRect(kSessionRowX, y, kSessionRowW, kSessionRowH, 4,
+                    s.selected ? color::accSoft : color::card);
+    c.drawRoundRect(kSessionRowX, y, kSessionRowW, kSessionRowH, 4, border);
+    c.text(s.name[0] ? s.name : kDash, 18, y + kSessionRowH / 2, Font::Label,
            Align::MiddleLeft, color::ink);
-    c.text(activityLabel(s.activity), 302, y + 14, Font::Label,
+    c.text(activityLabel(s.activity), 302, y + kSessionRowH / 2, Font::Label,
            Align::MiddleRight, activityColor(s.activity));
-    y += 31;
+    y += kSessionRowH + kSessionRowGap;
   }
 
-  renderFooter(PageId::Sessions, pageCountFor(m), d, c);
+  c.drawHLine(10, 215, 300, color::hairline);
+  c.text(d.date[0] ? d.date : "--", 10, 226, Font::Label,
+         Align::MiddleLeft, color::mute);
+  if (totalPages > 1) {
+    char next[16];
+    snprintf(next, sizeof(next), "NEXT %d/%d", page + 1, totalPages);
+    c.text(next, 160, 226, Font::Label, Align::MiddleCenter, color::ink);
+  }
+  c.text(d.clock[0] ? d.clock : "--:--", 310, 226, Font::Label,
+         Align::MiddleRight, color::ink2);
 }
 
 // ── PAGE · Waiting (uses DeviceInfo, NOT StatusModel) ───────────────────────
@@ -493,11 +498,17 @@ void renderPage(PageId id, const StatusModel& m, const DeviceInfo& d, Canvas& c)
 }
 
 bool hasSessionsPage(const StatusModel& m) {
-  return m.sessionN >= 3;  // AUTO row + at least two live sessions
+  return m.sessionN >= 2;
 }
 
 int pageCountFor(const StatusModel& m) {
-  return hasSessionsPage(m) ? kMaxPageCount : kPageCount;
+  (void)m;
+  return kPageCount;
+}
+
+int sessionPageCountFor(const StatusModel& m) {
+  if (m.sessionN <= 0) return 1;
+  return (m.sessionN + kSessionRowsPerPage - 1) / kSessionRowsPerPage;
 }
 
 }  // namespace m5render

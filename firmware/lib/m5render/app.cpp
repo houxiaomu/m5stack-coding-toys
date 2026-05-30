@@ -180,8 +180,7 @@ void App::handleLine(const char* line, std::size_t len) {
             send(line.c_str(), line.size());
             return;
         }
-        const uint16_t region = y < (board_->display->height() / 2) ? 0 : 1;
-        handleTouchTapAction(region, now());
+        handleTouchTapAction(static_cast<int16_t>(x), static_cast<int16_t>(y), now());
         std::string line = m5proto::encode_tap_ack(env.id, 0, true, nullptr);
         send(line.c_str(), line.size());
         return;
@@ -193,7 +192,11 @@ void App::handleLine(const char* line, std::size_t len) {
         M5CT_DBG("status parse=%d active=%d", ok ? 1 : 0, model_.sessionActive ? 1 : 0);
         if (ok) {
             if (model_.sessionActive) {
-                if (!wasLive) page_ = PageId::Overview;  // first live frame → overview
+                if (!wasLive) {
+                    page_ = hasSessionsPage(model_) ? PageId::Sessions : PageId::Overview;
+                } else if (!hasSessionsPage(model_) && page_ == PageId::Sessions) {
+                    page_ = PageId::Overview;
+                }
                 link_ = LinkState::Live;
             } else {
                 link_ = LinkState::Linked;               // explicit idle
@@ -210,31 +213,54 @@ void App::pollInput() {
     m5hal::InputEvent e{};
     if (!board_->input->poll(e)) return;
     if (e.kind != m5hal::InputEvent::TouchTap) return;
-    handleTouchTapAction(e.code, e.t_ms);
+    handleTouchTapAction(e.x, e.y, e.t_ms);
 }
 
-void App::handleTouchTapAction(uint16_t code, uint32_t t_ms) {
+void App::handleTouchTapAction(int16_t x, int16_t y, uint32_t t_ms) {
     if (link_ != LinkState::Live) return;  // paging only on status pages
     if (page_ == PageId::Sessions && hasSessionsPage(model_)) {
-        handleSessionsTap(code, t_ms);
+        handleSessionsTap(x, y, t_ms);
         return;
     }
-    const int pages = pageCountFor(model_);
-    page_ = static_cast<PageId>((static_cast<int>(page_) + 1) % pages);
-    dirty_ = true;
-}
-
-void App::handleSessionsTap(uint16_t code, uint32_t t_ms) {
-    if (model_.sessionN <= 0) return;
-    if (code == 0) {
-        model_.pickerIndex = (model_.pickerIndex + 1) % model_.sessionN;
+    if (hasSessionsPage(model_) && y <= 34) {
+        page_ = PageId::Sessions;
         dirty_ = true;
         return;
     }
-    const auto& s = model_.sessions[model_.pickerIndex];
-    std::string line = s.autoMode
-        ? m5proto::encode_focus_event_auto(t_ms)
-        : m5proto::encode_focus_event_session(t_ms, s.id);
+    if (hasSessionsPage(model_) && page_ == PageId::Workspace) {
+        page_ = PageId::Sessions;
+        dirty_ = true;
+        return;
+    }
+    page_ = static_cast<PageId>((static_cast<int>(page_) + 1) % kPageCount);
+    dirty_ = true;
+}
+
+void App::handleSessionsTap(int16_t x, int16_t y, uint32_t t_ms) {
+    if (model_.sessionN <= 0) return;
+    const int totalPages = sessionPageCountFor(model_);
+    if (totalPages > 1 && x >= kSessionNextX1 && x <= kSessionNextX2 &&
+        y >= kSessionNextY1 && y <= kSessionNextY2) {
+        model_.sessionPageIndex = (model_.sessionPageIndex + 1) % totalPages;
+        dirty_ = true;
+        return;
+    }
+    if (x < kSessionRowX || x > kSessionRowX + kSessionRowW) return;
+    const int start = model_.sessionPageIndex * kSessionRowsPerPage;
+    int selectedIndex = -1;
+    for (int row = 0; row < kSessionRowsPerPage; ++row) {
+        const int rowY = kSessionRowY + row * (kSessionRowH + kSessionRowGap);
+        if (y >= rowY && y <= rowY + kSessionRowH) {
+            const int idx = start + row;
+            if (idx < model_.sessionN) selectedIndex = idx;
+            break;
+        }
+    }
+    if (selectedIndex < 0) return;
+    for (int i = 0; i < model_.sessionN; ++i) model_.sessions[i].selected = false;
+    model_.sessions[selectedIndex].selected = true;
+    const auto& s = model_.sessions[selectedIndex];
+    std::string line = m5proto::encode_focus_event_session(t_ms, s.id);
     send(line.c_str(), line.size());
     page_ = PageId::Overview;
     dirty_ = true;

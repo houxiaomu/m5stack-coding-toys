@@ -221,22 +221,18 @@ void test_header_status_dot_drawn() {
   TEST_ASSERT_TRUE(c.calledPrefix("fillCircle"));
 }
 
-void test_header_shows_focus_label_when_multi_session() {
+void test_header_does_not_show_focus_label_when_multi_session() {
   StatusModel m;
-  m.hasFocus = true;
-  m.focusPinned = false;
-  m.focusIndex = 2;
-  m.focusTotal = 4;
+  m.sessionN = 2;
+  strcpy(m.sessions[0].name, "repo-a");
+  strcpy(m.sessions[1].name, "repo-b");
   MockCanvas c; renderHeader(PageId::Overview, m, c);
-  TEST_ASSERT_TRUE(c.called("text", "AUTO 2/4"));
+  TEST_ASSERT_FALSE(c.called("text", "AUTO 2/4"));
+  TEST_ASSERT_FALSE(c.called("text", "PINNED 2/4"));
 }
 
-void test_header_hides_focus_label_for_single_session() {
+void test_header_has_no_single_session_focus_label() {
   StatusModel m;
-  m.hasFocus = true;
-  m.focusPinned = false;
-  m.focusIndex = 1;
-  m.focusTotal = 1;
   MockCanvas c; renderHeader(PageId::Overview, m, c);
   TEST_ASSERT_FALSE(c.called("text", "AUTO 1/1"));
 }
@@ -244,27 +240,23 @@ void test_header_hides_focus_label_for_single_session() {
 void test_header_uses_selected_terminal_name_not_model() {
   StatusModel m;
   strcpy(m.modelShort, "Opus 4.8");
-  m.sessionN = 2;
-  strcpy(m.sessions[0].name, "AUTO");
-  m.sessions[0].autoMode = true;
-  strcpy(m.sessions[1].name, "fullfs");
-  m.sessions[1].selected = true;
+  m.sessionN = 1;
+  strcpy(m.sessions[0].name, "fullfs");
+  m.sessions[0].selected = true;
   MockCanvas c; renderHeader(PageId::Overview, m, c);
   TEST_ASSERT_TRUE(c.called("text", "fullfs"));
   TEST_ASSERT_FALSE(c.called("text", "Opus 4.8"));
 }
 
-void test_header_skips_auto_row_for_terminal_name() {
+void test_header_uses_first_selected_terminal_name() {
   StatusModel m;
   m.sessionN = 2;
-  strcpy(m.sessions[0].name, "AUTO");
-  m.sessions[0].autoMode = true;
-  m.sessions[0].selected = true;
-  strcpy(m.sessions[1].name, "fullfs");
+  strcpy(m.sessions[0].name, "repo-a");
+  strcpy(m.sessions[1].name, "repo-b");
   m.sessions[1].selected = true;
   MockCanvas c; renderHeader(PageId::Overview, m, c);
-  TEST_ASSERT_TRUE(c.called("text", "fullfs"));
-  TEST_ASSERT_FALSE(c.called("text", "AUTO"));
+  TEST_ASSERT_TRUE(c.called("text", "repo-b"));
+  TEST_ASSERT_FALSE(c.called("text", "repo-a"));
 }
 
 void test_header_falls_back_to_worktree_name() {
@@ -311,25 +303,43 @@ void test_live_footer_renders_date_time_and_page_dots() {
   TEST_ASSERT_TRUE(c.countPrefix("fillCircle") >= kPageCount + 1);
 }
 
-void test_live_footer_uses_five_dots_when_sessions_page_exists() {
-  StatusModel m;
-  m.sessionN = 3;
-  MockCanvas c; renderPage(PageId::Sessions, m, testDevice(), c);
-  TEST_ASSERT_TRUE(c.countPrefix("fillCircle") >= kMaxPageCount + 1);
-}
-
-void test_sessions_page_renders_rows() {
+void test_live_footer_keeps_four_dots_when_sessions_page_exists() {
   StatusModel m;
   m.sessionN = 2;
-  strcpy(m.sessions[0].name, "AUTO");
-  m.sessions[0].autoMode = true;
+  MockCanvas c; renderPage(PageId::Overview, m, testDevice(), c);
+  TEST_ASSERT_TRUE(c.countPrefix("fillCircle") >= kPageCount + 1);
+  TEST_ASSERT_FALSE(c.countPrefix("fillCircle") >= kMaxPageCount + 1);
+}
+
+void test_sessions_page_renders_three_rows_and_next() {
+  StatusModel m;
+  m.sessionN = 4;
+  strcpy(m.sessions[0].name, "repo-a");
+  m.sessions[0].activity = Activity::NeedsAttention;
   strcpy(m.sessions[1].name, "repo-a");
-  m.sessions[1].activity = Activity::NeedsAttention;
+  strcpy(m.sessions[2].name, "repo-b");
+  strcpy(m.sessions[3].name, "repo-c");
   MockCanvas c; renderPage(PageId::Sessions, m, testDevice(), c);
   TEST_ASSERT_TRUE(c.called("text", "TERMINALS"));
-  TEST_ASSERT_TRUE(c.called("text", "AUTO"));
   TEST_ASSERT_TRUE(c.called("text", "repo-a"));
+  TEST_ASSERT_TRUE(c.called("text", "repo-b"));
+  TEST_ASSERT_FALSE(c.called("text", "repo-c"));
   TEST_ASSERT_TRUE(c.called("text", "NEEDS YOU"));
+  TEST_ASSERT_TRUE(c.called("text", "NEXT 1/2"));
+}
+
+void test_sessions_page_second_page_renders_remaining_rows() {
+  StatusModel m;
+  m.sessionN = 4;
+  m.sessionPageIndex = 1;
+  strcpy(m.sessions[0].name, "repo-a");
+  strcpy(m.sessions[1].name, "repo-b");
+  strcpy(m.sessions[2].name, "repo-c");
+  strcpy(m.sessions[3].name, "repo-d");
+  MockCanvas c; renderPage(PageId::Sessions, m, testDevice(), c);
+  TEST_ASSERT_FALSE(c.called("text", "repo-a"));
+  TEST_ASSERT_TRUE(c.called("text", "repo-d"));
+  TEST_ASSERT_TRUE(c.called("text", "NEXT 2/2"));
 }
 
 void test_page_dots_draws_four() {
@@ -398,17 +408,18 @@ void setup() {
   RUN_TEST(test_header_badge_never_shows_ctx_high);
   RUN_TEST(test_cost_rows_degrade_when_no_today_or_weekly);
   RUN_TEST(test_header_status_dot_drawn);
-  RUN_TEST(test_header_shows_focus_label_when_multi_session);
-  RUN_TEST(test_header_hides_focus_label_for_single_session);
+  RUN_TEST(test_header_does_not_show_focus_label_when_multi_session);
+  RUN_TEST(test_header_has_no_single_session_focus_label);
   RUN_TEST(test_header_uses_selected_terminal_name_not_model);
-  RUN_TEST(test_header_skips_auto_row_for_terminal_name);
+  RUN_TEST(test_header_uses_first_selected_terminal_name);
   RUN_TEST(test_header_falls_back_to_worktree_name);
   RUN_TEST(test_sessions_header_is_terminals);
   RUN_TEST(test_overview_context_label_includes_model);
   RUN_TEST(test_overview_context_label_omits_missing_model);
   RUN_TEST(test_live_footer_renders_date_time_and_page_dots);
-  RUN_TEST(test_live_footer_uses_five_dots_when_sessions_page_exists);
-  RUN_TEST(test_sessions_page_renders_rows);
+  RUN_TEST(test_live_footer_keeps_four_dots_when_sessions_page_exists);
+  RUN_TEST(test_sessions_page_renders_three_rows_and_next);
+  RUN_TEST(test_sessions_page_second_page_renders_remaining_rows);
   RUN_TEST(test_page_dots_draws_four);
   RUN_TEST(test_overview_renders_header_and_dots);
   RUN_TEST(test_waiting_linked_shows_connected_copy);

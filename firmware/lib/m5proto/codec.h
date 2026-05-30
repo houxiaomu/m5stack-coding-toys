@@ -118,15 +118,6 @@ inline std::string encode_tap_ack(const char* id, uint64_t t, bool ok, const cha
   return s;
 }
 
-inline std::string encode_focus_event_auto(uint64_t t) {
-  std::string s = "{\"v\":1,\"k\":\"";
-  s += kind::device_event;
-  s += "\",\"t\":";
-  s += std::to_string(t);
-  s += ",\"p\":{\"kind\":\"focus\",\"target\":\"auto\"}}";
-  return s;
-}
-
 inline std::string encode_focus_event_session(uint64_t t, const char* session_id) {
   std::string s = "{\"v\":1,\"k\":\"";
   s += kind::device_event;
