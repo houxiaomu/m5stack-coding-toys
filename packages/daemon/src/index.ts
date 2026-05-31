@@ -22,6 +22,7 @@ export {
 export { FakeBleCentral } from './ble/fake.js'
 export { createNobleCentral } from './ble/backend-noble.js'
 export { pairDevice, type PairDeviceOpts } from './ble/pairing.js'
+export { BleUnavailableError } from './ble/types.js'
 export type { BleAdvertisement, BleCentral, BleLink, PairDeviceResult } from './ble/types.js'
 export { DeviceSession, type DeviceInfo, type SessionConfig } from './device-session.js'
 export { BleTransport } from './transport/ble.js'
