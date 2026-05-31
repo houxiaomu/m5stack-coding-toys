@@ -51,7 +51,7 @@ TransportKind TransportMux::kind() const {
 TransportUiStatus TransportMux::uiStatus() const {
     TransportUiStatus st{};
     st.active = kind();
-    if (ble_) st.ble = ble_->connected() ? BleUiState::Connected : BleUiState::Ready;
+    if (ble_) st.ble = ble_->uiStatus().ble;
     return st;
 }
 

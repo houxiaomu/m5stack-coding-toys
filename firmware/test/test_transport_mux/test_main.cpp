@@ -33,11 +33,14 @@ public:
 
     TransportKind kind() const override { return kind_; }
 
+    TransportUiStatus uiStatus() const override { return ui; }
+
     bool          begun       = false;
     bool          isConnected = true;
     std::string   rx;
     std::string   tx;
     TransportKind kind_;
+    TransportUiStatus ui{};
 };
 
 void test_first_readable_transport_becomes_active() {
@@ -94,6 +97,17 @@ void test_disconnected_active_transport_clears_active() {
     TEST_ASSERT_EQUAL_INT(static_cast<int>(TransportKind::None), static_cast<int>(mux.kind()));
 }
 
+void test_ui_status_preserves_ble_pairing_state() {
+    FakeTransport serial(TransportKind::Serial);
+    FakeTransport ble(TransportKind::Ble);
+    ble.ui.ble = BleUiState::Pairing;
+    TransportMux mux(&serial, &ble);
+
+    const TransportUiStatus st = mux.uiStatus();
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(BleUiState::Pairing), static_cast<int>(st.ble));
+}
+
 void setUp() {}
 void tearDown() {}
 
@@ -103,5 +117,6 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_writes_go_to_active_transport);
     RUN_TEST(test_serial_can_override_ble_active_transport);
     RUN_TEST(test_disconnected_active_transport_clears_active);
+    RUN_TEST(test_ui_status_preserves_ble_pairing_state);
     return UNITY_END();
 }

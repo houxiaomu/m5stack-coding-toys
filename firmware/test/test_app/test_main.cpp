@@ -11,11 +11,20 @@ using m5hal::mock::MockTransport;
 
 static uint32_t g_now = 0;
 static int g_pair_start_count = 0;
+static int g_pair_stop_count = 0;
+static bool g_pairing_active = false;
 static uint32_t mockNow() { return g_now; }
 static bool mockStartBlePairing(uint32_t) {
   g_pair_start_count++;
+  g_pairing_active = true;
   return true;
 }
+static bool mockStopBlePairing() {
+  g_pair_stop_count++;
+  g_pairing_active = false;
+  return true;
+}
+static bool mockBlePairingActive() { return g_pairing_active; }
 
 static Board makeBoard(MockTransport& t) {
   Board b{};
@@ -38,6 +47,8 @@ static Board makeTouchBoard(MockTransport& t, m5hal::mock::MockDisplay& d, m5hal
 void setUp() {
   g_now = 0;
   g_pair_start_count = 0;
+  g_pair_stop_count = 0;
+  g_pairing_active = false;
 }
 void tearDown() {}
 
@@ -191,6 +202,46 @@ void test_waiting_long_press_top_right_starts_ble_pairing() {
   i.feed(e);
   app.tick();
   TEST_ASSERT_EQUAL(1, g_pair_start_count);
+}
+
+void test_waiting_long_press_anywhere_starts_ble_pairing() {
+  MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
+  Board b = makeTouchBoard(t, d, i);
+  b.start_ble_pairing = mockStartBlePairing;
+  App app(c, &b); app.setNowFn(mockNow);
+  m5hal::InputEvent e{};
+  e.kind = m5hal::InputEvent::TouchLongPress;
+  e.x = 160;
+  e.y = 145;
+  e.t_ms = 2000;
+  i.feed(e);
+  app.tick();
+  TEST_ASSERT_EQUAL(1, g_pair_start_count);
+}
+
+void test_ble_pairing_stays_active_for_five_minutes() {
+  MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
+  Board b = makeTouchBoard(t, d, i);
+  b.start_ble_pairing = mockStartBlePairing;
+  b.stop_ble_pairing = mockStopBlePairing;
+  b.ble_pairing_active = mockBlePairingActive;
+  App app(c, &b); app.setNowFn(mockNow);
+  g_now = 1000;
+  m5hal::InputEvent e{};
+  e.kind = m5hal::InputEvent::TouchLongPress;
+  e.x = 160;
+  e.y = 145;
+  e.t_ms = 1000;
+  i.feed(e);
+  app.tick();
+
+  g_now = 1000 + 299000;
+  app.tick();
+  TEST_ASSERT_EQUAL(0, g_pair_stop_count);
+
+  g_now = 1000 + 301000;
+  app.tick();
+  TEST_ASSERT_EQUAL(1, g_pair_stop_count);
 }
 
 void test_tap_out_of_bounds_returns_error() {
@@ -380,6 +431,8 @@ int main(int, char**) {
   RUN_TEST(test_tap_advances_page_when_live);
   RUN_TEST(test_tap_does_not_advance_page_when_linked);
   RUN_TEST(test_waiting_long_press_top_right_starts_ble_pairing);
+  RUN_TEST(test_waiting_long_press_anywhere_starts_ble_pairing);
+  RUN_TEST(test_ble_pairing_stays_active_for_five_minutes);
   RUN_TEST(test_tap_out_of_bounds_returns_error);
   RUN_TEST(test_tap_without_touch_returns_unsupported);
   RUN_TEST(test_multi_session_first_status_opens_sessions_page);

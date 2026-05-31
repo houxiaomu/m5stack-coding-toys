@@ -179,8 +179,10 @@ void BleGattTransport::updateAdvertising() {
     NimBLEDevice::setDeviceName(local_name_);
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
     adv->stop();
-    adv->setName(local_name_);
+    adv->clearData();
+    adv->enableScanResponse(true);
     adv->addServiceUUID(ble_uuid::service);
+    adv->setName(local_name_);
     adv->start();
 }
 

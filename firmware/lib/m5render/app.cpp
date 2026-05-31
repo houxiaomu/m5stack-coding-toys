@@ -27,7 +27,7 @@ constexpr std::size_t CAPS_CORES3_N = sizeof(CAPS_CORES3) / sizeof(CAPS_CORES3[0
 
 // No inbound frame (incl. ping) for this long → link is dead → NoLink.
 constexpr uint32_t LINK_TIMEOUT_MS = 15000;
-constexpr uint32_t BLE_PAIRING_TIMEOUT_MS = 60000;
+constexpr uint32_t BLE_PAIRING_TIMEOUT_MS = 5 * 60 * 1000;
 
 }  // namespace
 
@@ -228,7 +228,8 @@ void App::pollInput() {
 
 void App::handleTouchLongPress(int16_t x, int16_t y, uint32_t t_ms) {
     if (link_ == LinkState::Live) return;
-    if (x < 240 || y > 48) return;
+    (void)x;
+    (void)y;
     if (!board_ || !board_->start_ble_pairing) return;
     if (board_->start_ble_pairing(t_ms)) {
         pairingStartedMs_ = now();
