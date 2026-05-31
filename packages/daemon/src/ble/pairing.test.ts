@@ -81,7 +81,9 @@ describe('pairDevice', () => {
 
   it('finds a bound device by device id', async () => {
     const central = new FakeBleCentral([adv('M5SE-A1B2C3')])
-    await expect(central.scanBound({ deviceId: 'M5SE-A1B2C3', timeoutMs: 10 })).resolves.toMatchObject({
+    await expect(
+      central.scanBound({ deviceId: 'M5SE-A1B2C3', timeoutMs: 10 }),
+    ).resolves.toMatchObject({
       deviceId: 'M5SE-A1B2C3',
       pairing: true,
     })

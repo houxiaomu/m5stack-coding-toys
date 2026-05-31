@@ -18,7 +18,11 @@ interface NobleLike {
   removeListener(event: 'stateChange' | 'discover', fn: (...args: never[]) => void): void
   startScanningAsync?(serviceUuids: string[], allowDuplicates?: boolean): Promise<void>
   stopScanningAsync?(): Promise<void>
-  startScanning?(serviceUuids: string[], allowDuplicates?: boolean, cb?: (err?: Error) => void): void
+  startScanning?(
+    serviceUuids: string[],
+    allowDuplicates?: boolean,
+    cb?: (err?: Error) => void,
+  ): void
   stopScanning?(): void
 }
 
@@ -368,7 +372,9 @@ function parseServiceData(
 ): ParsedServiceData {
   const service = toNobleUuid(M5CT_BLE_SERVICE_UUID)
   const chunks = [
-    ...(serviceData ?? []).filter((d) => normalizeUuid(d.uuid ?? '') === service).map((d) => d.data),
+    ...(serviceData ?? [])
+      .filter((d) => normalizeUuid(d.uuid ?? '') === service)
+      .map((d) => d.data),
     manufacturerData,
   ].filter((d): d is Buffer => Buffer.isBuffer(d))
   for (const chunk of chunks) {

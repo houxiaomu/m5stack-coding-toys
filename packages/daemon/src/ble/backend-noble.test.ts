@@ -1,12 +1,12 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it } from 'vitest'
+import { createNobleCentral } from './backend-noble.js'
 import {
   M5CT_BLE_INFO_UUID,
   M5CT_BLE_RX_UUID,
   M5CT_BLE_SERVICE_UUID,
   M5CT_BLE_TX_UUID,
 } from './constants.js'
-import { createNobleCentral } from './backend-noble.js'
 import { BleUnavailableError } from './types.js'
 
 const svc = M5CT_BLE_SERVICE_UUID.replaceAll('-', '')

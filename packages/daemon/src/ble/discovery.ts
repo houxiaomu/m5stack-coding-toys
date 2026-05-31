@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
+import type { PairedDevice } from '../device-store.js'
 import type { DeviceCandidate, DeviceDiscovery } from '../discovery.js'
 import { BLE_PRIORITY } from '../discovery.js'
-import type { PairedDevice } from '../device-store.js'
 import { makeLogger } from '../logger.js'
 import type { BleAdvertisement, BleCentral } from './types.js'
 

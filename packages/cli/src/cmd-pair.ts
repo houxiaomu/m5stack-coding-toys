@@ -1,8 +1,8 @@
 import { createInterface } from 'node:readline/promises'
 import {
-  BleUnavailableError,
   type BleAdvertisement,
   type BleCentral,
+  BleUnavailableError,
   createNobleCentral,
   devicesPath,
   pairDevice,
@@ -73,7 +73,9 @@ export async function runPair(
       return 1
     }
     if (result.error === 'multiple_devices') {
-      io.error('m5ct pair: multiple devices found; choose one explicitly in an interactive terminal')
+      io.error(
+        'm5ct pair: multiple devices found; choose one explicitly in an interactive terminal',
+      )
       return 1
     }
     if (result.error === 'canceled') {
@@ -95,7 +97,11 @@ export async function runPair(
   }
 }
 
-async function confirmDevice(device: BleAdvertisement, io: IO, opts: PairRunOpts): Promise<boolean> {
+async function confirmDevice(
+  device: BleAdvertisement,
+  io: IO,
+  opts: PairRunOpts,
+): Promise<boolean> {
   io.log('')
   io.log('Found:')
   io.log(

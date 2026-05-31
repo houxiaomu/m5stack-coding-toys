@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { FakeBleCentral } from '../../daemon/src/ble/fake.js'
-import { BleUnavailableError, type BleAdvertisement } from '../../daemon/src/ble/types.js'
+import { type BleAdvertisement, BleUnavailableError } from '../../daemon/src/ble/types.js'
 import { runPair } from './cmd-pair.js'
 
 const SERVICE = '7d9a0000-6f4f-4f24-9b56-6d3563740000'

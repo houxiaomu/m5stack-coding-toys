@@ -3,6 +3,8 @@ import { mkdirSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FileAggregatorStore } from './aggregator-store.js'
+import { createNobleCentral } from './ble/backend-noble.js'
+import { BleDiscovery } from './ble/discovery.js'
 import type { StatusLineInput } from './cc-statusline.js'
 import { loadConfig } from './config.js'
 import { makeControlHandler } from './control-ops.js'
@@ -10,6 +12,12 @@ import { DeviceManager } from './device-manager.js'
 import { DevicePoller } from './device-poller.js'
 import { DeviceProfile } from './device-profile.js'
 import { DeviceSession } from './device-session.js'
+import {
+  type DeviceStoreData,
+  markDeviceSeen,
+  readDeviceStore,
+  writeDeviceStore,
+} from './device-store.js'
 import { GitEnricher } from './git-enrich.js'
 import { HookServer } from './hook-server.js'
 import { type LogLevel, closeLogFile, makeLogger, setLogFile, setLogLevel } from './logger.js'
@@ -24,14 +32,6 @@ import {
   socketPath,
   stateDir,
 } from './state-dir.js'
-import { createNobleCentral } from './ble/backend-noble.js'
-import { BleDiscovery } from './ble/discovery.js'
-import {
-  type DeviceStoreData,
-  markDeviceSeen,
-  readDeviceStore,
-  writeDeviceStore,
-} from './device-store.js'
 import { BleTransport } from './transport/ble.js'
 import { FakeStdioTransport } from './transport/fake-stdio.js'
 import type { Transport } from './transport/interface.js'

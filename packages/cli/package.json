@@ -30,9 +30,7 @@
     "m5ctd": "./dist/m5ctd.js",
     "m5ct-statusline": "./dist/m5ct-statusline.js"
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "publishConfig": {
     "access": "public"
   },
