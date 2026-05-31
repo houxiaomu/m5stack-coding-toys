@@ -8,7 +8,7 @@ const common = {
   platform: 'node',
   format: 'esm',
   target: 'node22',
-  external: ['serialport'],
+  external: ['serialport', '@abandonware/noble'],
   // Stamp the published version into the bundle so the daemon's version() (used
   // by the singleton lock to decide same-version vs upgrade) reports the truth.
   define: { 'process.env.M5CT_VERSION': JSON.stringify(pkg.version) },
