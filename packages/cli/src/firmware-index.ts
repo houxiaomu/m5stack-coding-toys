@@ -18,8 +18,32 @@ const REL = 'https://github.com/houxiaomu/m5stack-coding-toys/releases/download'
 
 export const FIRMWARE_INDEX: Record<string, BoardIndex> = {
   'cores3-se': {
-    defaultVersion: '0.4.0',
+    defaultVersion: '0.5.0',
     versions: {
+      '0.5.0': {
+        board: 'cores3-se',
+        version: '0.5.0',
+        files: [
+          {
+            name: 'bootloader.bin',
+            url: `${REL}/fw-cores3-se-0.5.0/bootloader.bin`,
+            sha256: '2a71d69b471e20c2bac7fb469f3c6a807b3ebee780e348e5889db0da849ca363',
+            offset: 0x0,
+          },
+          {
+            name: 'partitions.bin',
+            url: `${REL}/fw-cores3-se-0.5.0/partitions.bin`,
+            sha256: 'bd0f7954aca2ef7d925ee21aaa1f3dc8822d1d6ce5cbbd26a135e5886bfff6ce',
+            offset: 0x8000,
+          },
+          {
+            name: 'firmware.bin',
+            url: `${REL}/fw-cores3-se-0.5.0/firmware.bin`,
+            sha256: '7585fcad630a76940a475998e5ed7987e0f99a9480474338b1aecce4fdfec416',
+            offset: 0x10000,
+          },
+        ],
+      },
       '0.4.0': {
         board: 'cores3-se',
         version: '0.4.0',

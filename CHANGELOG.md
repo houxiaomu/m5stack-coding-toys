@@ -12,6 +12,22 @@ the same line; its npm publish is pending.
 
 _Nothing yet._
 
+## [0.5.0] — 2026-05-31
+
+Tag: `fw-cores3-se-0.5.0`
+
+### Added
+- **BLE transport for CoreS3 SE** — the device can advertise over BLE, pair from
+  `m5ct pair`, and reconnect as the default device without USB.
+- **BLE device management** — paired devices can be listed, selected, and removed
+  through the CLI.
+
+### Changed
+- Bumped the CLI suite (`m5ct`, `m5ctd`, `m5ct-statusline`) to `0.5.0`.
+- Extended the BLE pairing window to five minutes.
+- Long-press pairing entry now works from the waiting screen without requiring a
+  top-right hot zone.
+
 ## [0.4.0] — 2026-05-30
 
 Tag: `fw-cores3-se-0.4.0`
@@ -49,7 +65,8 @@ Tag: `fw-cores3-se-0.3.0`
 - `m5ct tap` command and an activity badge driven by Claude Code hook events.
 - npm release packaging for the `m5ct` / `m5ctd` / `m5ct-statusline` bins.
 
-[Unreleased]: https://github.com/houxiaomu/m5stack-coding-toys/compare/fw-cores3-se-0.4.0...HEAD
+[Unreleased]: https://github.com/houxiaomu/m5stack-coding-toys/compare/fw-cores3-se-0.5.0...HEAD
+[0.5.0]: https://github.com/houxiaomu/m5stack-coding-toys/releases/tag/fw-cores3-se-0.5.0
 [0.4.0]: https://github.com/houxiaomu/m5stack-coding-toys/releases/tag/fw-cores3-se-0.4.0
 [0.3.1]: https://github.com/houxiaomu/m5stack-coding-toys/releases/tag/fw-cores3-se-0.3.1
 [0.3.0]: https://github.com/houxiaomu/m5stack-coding-toys/releases/tag/fw-cores3-se-0.3.0

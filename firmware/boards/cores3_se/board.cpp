@@ -31,7 +31,7 @@ Board g_board{
     /* power     */ &g_power,
     /* transport */ &g_transport,
     /* name      */ "cores3-se",
-    /* fw_ver    */ "0.4.0",
+    /* fw_ver    */ "0.5.0",
     /* device_id */ g_device_id,
     /* start_ble_pairing */ startBlePairing,
     /* stop_ble_pairing  */ stopBlePairing,
