@@ -10,7 +10,12 @@ using namespace m5hal;
 using m5hal::mock::MockTransport;
 
 static uint32_t g_now = 0;
+static int g_pair_start_count = 0;
 static uint32_t mockNow() { return g_now; }
+static bool mockStartBlePairing(uint32_t) {
+  g_pair_start_count++;
+  return true;
+}
 
 static Board makeBoard(MockTransport& t) {
   Board b{};
@@ -30,7 +35,10 @@ static Board makeTouchBoard(MockTransport& t, m5hal::mock::MockDisplay& d, m5hal
   return b;
 }
 
-void setUp() { g_now = 0; }
+void setUp() {
+  g_now = 0;
+  g_pair_start_count = 0;
+}
 void tearDown() {}
 
 void test_boot_is_nolink() {
@@ -168,6 +176,21 @@ void test_tap_does_not_advance_page_when_linked() {
   const std::string tx = t.drain_tx();
   TEST_ASSERT_TRUE(tx.find("\"k\":\"tap.ack\"") != std::string::npos);
   TEST_ASSERT_TRUE(tx.find("\"ok\":true") != std::string::npos);
+}
+
+void test_waiting_long_press_top_right_starts_ble_pairing() {
+  MockTransport t; MockCanvas c; m5hal::mock::MockDisplay d; m5hal::mock::MockInput i;
+  Board b = makeTouchBoard(t, d, i);
+  b.start_ble_pairing = mockStartBlePairing;
+  App app(c, &b); app.setNowFn(mockNow);
+  m5hal::InputEvent e{};
+  e.kind = m5hal::InputEvent::TouchLongPress;
+  e.x = 300;
+  e.y = 16;
+  e.t_ms = 2000;
+  i.feed(e);
+  app.tick();
+  TEST_ASSERT_EQUAL(1, g_pair_start_count);
 }
 
 void test_tap_out_of_bounds_returns_error() {
@@ -356,6 +379,7 @@ int main(int, char**) {
   RUN_TEST(test_tap_returns_ack_with_matching_id);
   RUN_TEST(test_tap_advances_page_when_live);
   RUN_TEST(test_tap_does_not_advance_page_when_linked);
+  RUN_TEST(test_waiting_long_press_top_right_starts_ble_pairing);
   RUN_TEST(test_tap_out_of_bounds_returns_error);
   RUN_TEST(test_tap_without_touch_returns_unsupported);
   RUN_TEST(test_multi_session_first_status_opens_sessions_page);

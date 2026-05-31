@@ -34,7 +34,8 @@ struct InputEvent {
         ButtonRelease = 1,
         KeyChar = 2,
         TouchTap = 3,
-        Shake = 4,
+        TouchLongPress = 4,
+        Shake = 5,
     };
     Kind     kind;
     uint16_t code;
@@ -91,6 +92,10 @@ struct Board {
     const char* name;
     const char* fw_ver;
     const char* device_id;
+    bool (*start_ble_pairing)(uint32_t now_ms);
+    bool (*stop_ble_pairing)();
+    bool (*ble_pairing_active)();
+    const char* (*ble_pair_code)();
 };
 
 Board* create_board();

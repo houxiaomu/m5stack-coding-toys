@@ -64,6 +64,7 @@ interface NobleCharacteristic {
 interface ParsedServiceData {
   deviceId?: string
   board?: string
+  fw?: string
   pairing?: boolean
   pairCode?: string
 }
@@ -115,6 +116,15 @@ class NobleCentral implements BleCentral {
     const chars = await discoverCharacteristics(peripheral)
     const rx = requiredChar(chars, M5CT_BLE_RX_UUID)
     const tx = requiredChar(chars, M5CT_BLE_TX_UUID)
+    const info = requiredChar(chars, M5CT_BLE_INFO_UUID)
+    const parsedInfo = parseInfoJson(await readCharacteristic(info))
+    if (parsedInfo) {
+      adv.board = parsedInfo.board ?? adv.board
+      adv.fw = parsedInfo.fw ?? adv.fw
+      adv.pairCode = parsedInfo.pairCode ?? adv.pairCode
+      if (parsedInfo.deviceId) adv.deviceId = parsedInfo.deviceId
+      if (typeof parsedInfo.pairing === 'boolean') adv.pairing = parsedInfo.pairing
+    }
     await subscribe(tx)
     return new NobleBleLink(`ble:${adv.deviceId}`, peripheral, rx, tx)
   }
@@ -322,6 +332,13 @@ async function writeCharacteristic(ch: NobleCharacteristic, data: Buffer): Promi
   })
 }
 
+async function readCharacteristic(ch: NobleCharacteristic): Promise<Buffer> {
+  if (ch.readAsync) return ch.readAsync()
+  return new Promise((resolve, reject) => {
+    ch.read?.((err, data) => (err ? reject(err) : resolve(data)))
+  })
+}
+
 function parseAdvertisement(peripheral: NoblePeripheral): BleAdvertisement | null {
   const a = peripheral.advertisement ?? {}
   const name = a.localName ?? ''
@@ -329,13 +346,15 @@ function parseAdvertisement(peripheral: NoblePeripheral): BleAdvertisement | nul
   const service = toNobleUuid(M5CT_BLE_SERVICE_UUID)
   if (!name.startsWith('m5ct-') || !serviceUuids.includes(service)) return null
   const serviceData = parseServiceData(a.serviceData, a.manufacturerData)
-  const deviceId = serviceData.deviceId ?? name.replace(/^m5ct-/, '')
+  const nameId = name.replace(/^m5ct-/, '').replace(/-PAIR$/, '')
+  const deviceId = serviceData.deviceId ?? nameId
   if (!deviceId) return null
   return {
     deviceId,
     board: serviceData.board ?? 'unknown',
     name,
-    pairing: serviceData.pairing ?? false,
+    fw: serviceData.fw,
+    pairing: serviceData.pairing ?? name.endsWith('-PAIR'),
     serviceUuid: M5CT_BLE_SERVICE_UUID,
     peripheralUuid: peripheral.uuid ?? peripheral.id ?? peripheral.address ?? deviceId,
     rssi: peripheral.rssi,
@@ -377,6 +396,7 @@ function parseInfoJson(buf: Buffer): ParsedServiceData | null {
             ? raw.deviceId
             : undefined,
       board: typeof raw.board === 'string' ? raw.board : undefined,
+      fw: typeof raw.fw === 'string' ? raw.fw : undefined,
       pairing: typeof raw.pairing === 'boolean' ? raw.pairing : undefined,
       pairCode:
         typeof raw.pair_code === 'string'

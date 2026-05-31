@@ -37,8 +37,11 @@ private:
     void refreshDeviceInfo();  // RTC / battery / fw / board into DeviceInfo
     void pollInput();
     void handleTouchTapAction(int16_t x, int16_t y, uint32_t t_ms);
+    void handleTouchLongPress(int16_t x, int16_t y, uint32_t t_ms);
     void handleSessionsTap(int16_t x, int16_t y, uint32_t t_ms);
     void checkLink();          // link silence → NoLink
+    void checkPairingTimeout();
+    bool pairingActive() const;
     void send(const char* line, std::size_t len);
     uint32_t now() const { return now_ ? now_() : 0; }
 
@@ -51,6 +54,7 @@ private:
     LinkState             link_       = LinkState::NoLink;
     uint32_t              lastRxMs_   = 0;
     uint32_t              lastAnimMs_ = 0;
+    uint32_t              pairingStartedMs_ = 0;
     int                   offsetMin_  = 0;  // minutes EAST of UTC, from last hello; 0 until synced
     bool                  dirty_      = true;
     uint32_t            (*now_)()     = nullptr;  // set in ctor to platform clock

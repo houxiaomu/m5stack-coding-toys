@@ -99,7 +99,7 @@ async function confirmDevice(device: BleAdvertisement, io: IO, opts: PairRunOpts
   io.log('')
   io.log('Found:')
   io.log(
-    `  1. ${device.deviceId}  ${device.name || device.board}  fw ${device.board}  rssi ${
+    `  1. ${device.deviceId}  ${device.name || device.board}  fw ${device.fw ?? '-'}  rssi ${
       device.rssi ?? '-'
     }`,
   )

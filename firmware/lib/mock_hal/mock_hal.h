@@ -63,9 +63,17 @@ private:
 
 class MockInput : public Input {
 public:
-    bool poll(InputEvent& /*out*/) override { return false; }
+    bool poll(InputEvent& out) override {
+        if (events_.empty()) return false;
+        out = events_.front();
+        events_.erase(events_.begin());
+        return true;
+    }
+    void feed(const InputEvent& e) { events_.push_back(e); }
     bool hasKeyboard() const override { return false; }
     bool hasTouch()    const override { return true; }
+private:
+    std::vector<InputEvent> events_;
 };
 
 class MockPower : public Power {

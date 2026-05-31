@@ -2,6 +2,7 @@
 #include <cstring>
 
 #include "mock_canvas.h"
+#include "m5hal.h"
 #include "pages.h"
 #include "status_model.h"
 
@@ -83,6 +84,16 @@ void test_waiting_uses_device_info_not_status() {
   TEST_ASSERT_TRUE(c.called("text", "CoreS3  0.4.0"));
   // Bottom-right battery: "Bat <pct>%" when not charging.
   TEST_ASSERT_TRUE(c.called("text", "Bat 78%"));
+}
+
+void test_waiting_pairing_shows_code_and_command() {
+  DeviceInfo d;
+  m5hal::TransportUiStatus st{};
+  st.ble = m5hal::BleUiState::Pairing;
+  MockCanvas c; renderWaiting(d, false, st, "123456", c);
+  TEST_ASSERT_TRUE(c.called("text", "BLE PAIRING"));
+  TEST_ASSERT_TRUE(c.called("text", "m5ct pair"));
+  TEST_ASSERT_TRUE(c.called("text", "123456"));
 }
 
 void test_cost_draws_sparkline_when_burn_history_present() {
@@ -393,6 +404,7 @@ void setup() {
   RUN_TEST(test_limits_uses_single_weekly_row);
   RUN_TEST(test_limits_renders_three_rows);
   RUN_TEST(test_waiting_uses_device_info_not_status);
+  RUN_TEST(test_waiting_pairing_shows_code_and_command);
   RUN_TEST(test_cost_draws_sparkline_when_burn_history_present);
   RUN_TEST(test_cost_no_sparkline_when_no_history);
   RUN_TEST(test_cost_degrades_when_no_cost);

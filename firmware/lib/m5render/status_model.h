@@ -68,6 +68,7 @@ struct StatusModel {
 struct DeviceInfo {
   char board[24] = "CoreS3";
   char fw[16] = "";
+  char deviceId[24] = "";
   char clock[8] = "--:--";   // RTC HH:MM
   char date[20] = "";
   int  batteryPct = 0; bool charging = false;

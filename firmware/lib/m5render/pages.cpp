@@ -450,6 +450,16 @@ static void drawSessions(const StatusModel& m, const DeviceInfo& d, Canvas& c) {
 
 // ── PAGE · Waiting (uses DeviceInfo, NOT StatusModel) ───────────────────────
 void renderWaiting(const DeviceInfo& d, bool linked, Canvas& c) {
+  m5hal::TransportUiStatus st{};
+  renderWaiting(d, linked, st, nullptr, c);
+}
+
+void renderWaiting(
+    const DeviceInfo& d,
+    bool linked,
+    m5hal::TransportUiStatus transport,
+    const char* pairCode,
+    Canvas& c) {
   c.fillScreen(color::bg);
 
   // Top device strip: board + fw.
@@ -462,16 +472,24 @@ void renderWaiting(const DeviceInfo& d, bool linked, Canvas& c) {
   if (d.clock[0])
     c.text(d.clock, 310, 10, Font::Label, Align::TopRight, color::ink2);
 
+  const bool pairing = transport.ble == m5hal::BleUiState::Pairing;
+
   // Connection indicator: green when linked, muted when not.
-  c.fillCircle(160, 90, 5, linked ? color::accent : color::mute);
-  if (linked) {
+  c.fillCircle(160, 90, 5, linked || pairing ? color::accent : color::mute);
+  if (pairing) {
+    c.text("BLE PAIRING", 160, 132, Font::Body, Align::MiddleCenter, color::ink);
+    c.text("m5ct pair", 160, 160, Font::Title, Align::MiddleCenter, color::accent);
+    if (d.deviceId[0]) c.text(d.deviceId, 160, 182, Font::Label, Align::MiddleCenter, color::ink2);
+    if (pairCode && pairCode[0]) c.text(pairCode, 160, 198, Font::Title, Align::MiddleCenter, color::ink);
+  } else if (linked) {
     c.text("Connected", 160, 145, Font::BigNumber, Align::MiddleCenter, color::ink);
     c.text("waiting for Claude", 160, 170, Font::Label, Align::MiddleCenter, color::mute);
     c.text("run  claude  in a terminal", 160, 184, Font::Label,
            Align::MiddleCenter, color::ink2);
   } else {
     c.text("Waiting for host", 160, 145, Font::BigNumber, Align::MiddleCenter, color::ink);
-    c.text("USB · no host", 160, 170, Font::Label, Align::MiddleCenter, color::mute);
+    const char* bleText = transport.ble == m5hal::BleUiState::Ready ? "BLE READY" : "USB no host";
+    c.text(bleText, 160, 170, Font::Label, Align::MiddleCenter, color::mute);
     c.text("connect this device to your Mac", 160, 184, Font::Label,
            Align::MiddleCenter, color::ink2);
   }

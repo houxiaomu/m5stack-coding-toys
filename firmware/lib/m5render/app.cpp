@@ -27,6 +27,7 @@ constexpr std::size_t CAPS_CORES3_N = sizeof(CAPS_CORES3) / sizeof(CAPS_CORES3[0
 
 // No inbound frame (incl. ping) for this long → link is dead → NoLink.
 constexpr uint32_t LINK_TIMEOUT_MS = 15000;
+constexpr uint32_t BLE_PAIRING_TIMEOUT_MS = 60000;
 
 }  // namespace
 
@@ -52,6 +53,7 @@ void App::tick() {
     if (!board_) return;
     pollInput();
     checkLink();
+    checkPairingTimeout();
 
     // Animate the activity badge: while Live, refresh brightness on a ~120ms
     // cadence so the breathe/pulse/blink advances without redrawing every loop.
@@ -196,6 +198,7 @@ void App::handleLine(const char* line, std::size_t len) {
         M5CT_DBG("status parse=%d active=%d", ok ? 1 : 0, model_.sessionActive ? 1 : 0);
         if (ok) {
             if (model_.sessionActive) {
+                if (pairingActive() && board_ && board_->stop_ble_pairing) board_->stop_ble_pairing();
                 if (!wasLive) {
                     page_ = hasSessionsPage(model_) ? PageId::Sessions : PageId::Overview;
                 } else if (!hasSessionsPage(model_) && page_ == PageId::Sessions) {
@@ -216,8 +219,21 @@ void App::pollInput() {
     if (!board_ || !board_->input) return;
     m5hal::InputEvent e{};
     if (!board_->input->poll(e)) return;
-    if (e.kind != m5hal::InputEvent::TouchTap) return;
-    handleTouchTapAction(e.x, e.y, e.t_ms);
+    if (e.kind == m5hal::InputEvent::TouchLongPress) {
+        handleTouchLongPress(e.x, e.y, e.t_ms);
+        return;
+    }
+    if (e.kind == m5hal::InputEvent::TouchTap) handleTouchTapAction(e.x, e.y, e.t_ms);
+}
+
+void App::handleTouchLongPress(int16_t x, int16_t y, uint32_t t_ms) {
+    if (link_ == LinkState::Live) return;
+    if (x < 240 || y > 48) return;
+    if (!board_ || !board_->start_ble_pairing) return;
+    if (board_->start_ble_pairing(t_ms)) {
+        pairingStartedMs_ = now();
+        dirty_ = true;
+    }
 }
 
 void App::handleTouchTapAction(int16_t x, int16_t y, uint32_t t_ms) {
@@ -288,6 +304,18 @@ void App::checkLink() {
     }
 }
 
+void App::checkPairingTimeout() {
+    if (!pairingActive() || pairingStartedMs_ == 0) return;
+    if (now() - pairingStartedMs_ <= BLE_PAIRING_TIMEOUT_MS) return;
+    if (board_ && board_->stop_ble_pairing) board_->stop_ble_pairing();
+    pairingStartedMs_ = 0;
+    dirty_ = true;
+}
+
+bool App::pairingActive() const {
+    return board_ && board_->ble_pairing_active && board_->ble_pairing_active();
+}
+
 void App::render() {
     if (!dirty_) return;
     M5CT_DBG("render link=%d page=%d", static_cast<int>(link_), static_cast<int>(page_));
@@ -296,7 +324,10 @@ void App::render() {
     if (link_ == LinkState::Live) {
         renderPage(page_, model_, dev_, canvas_);
     } else {
-        renderWaiting(dev_, link_ == LinkState::Linked, canvas_);
+        m5hal::TransportUiStatus st{};
+        if (board_ && board_->transport) st = board_->transport->uiStatus();
+        const char* pairCode = board_ && board_->ble_pair_code ? board_->ble_pair_code() : nullptr;
+        renderWaiting(dev_, link_ == LinkState::Linked, st, pairCode, canvas_);
     }
     canvas_.end();
     M5CT_DBG("render end");
@@ -307,8 +338,10 @@ void App::refreshDeviceInfo() {
     if (board_) {
         if (board_->name)   std::strncpy(dev_.board, board_->name, sizeof(dev_.board) - 1);
         if (board_->fw_ver) std::strncpy(dev_.fw, board_->fw_ver, sizeof(dev_.fw) - 1);
+        if (board_->device_id) std::strncpy(dev_.deviceId, board_->device_id, sizeof(dev_.deviceId) - 1);
         dev_.board[sizeof(dev_.board) - 1] = '\0';
         dev_.fw[sizeof(dev_.fw) - 1]       = '\0';
+        dev_.deviceId[sizeof(dev_.deviceId) - 1] = '\0';
         if (board_->power) {
             dev_.batteryPct = board_->power->batteryPct();
             dev_.charging   = board_->power->charging();

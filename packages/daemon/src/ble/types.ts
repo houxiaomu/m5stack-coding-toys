@@ -1,6 +1,7 @@
 export interface BleAdvertisement {
   deviceId: string
   board: string
+  fw?: string
   name: string
   pairing: boolean
   serviceUuid: string
