@@ -22,8 +22,12 @@ export async function pairDevice(opts: PairDeviceOpts): Promise<PairDeviceResult
     return { ok: false, error: 'multiple_devices' }
   }
   if (!selected) return { ok: false, error: 'canceled' }
+  const link = await opts.central.connect(selected, { timeoutMs: opts.timeoutMs ?? 10_000 })
   const ok = opts.confirm ? await opts.confirm(selected) : true
-  if (!ok) return { ok: false, error: 'canceled' }
+  if (!ok) {
+    await link.close()
+    return { ok: false, error: 'canceled' }
+  }
   const now = opts.nowMs ?? Date.now()
   const store = readDeviceStore(opts.storePath)
   const next = addOrUpdateDevice(
@@ -42,5 +46,6 @@ export async function pairDevice(opts: PairDeviceOpts): Promise<PairDeviceResult
     { makeDefault: true },
   )
   writeDeviceStore(opts.storePath, next)
+  await link.close()
   return { ok: true, deviceId: selected.deviceId }
 }

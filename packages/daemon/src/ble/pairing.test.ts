@@ -47,13 +47,15 @@ describe('pairDevice', () => {
   it('pairs one discovered device and makes it default', async () => {
     const t = tempStore()
     cleanup.push(t.dir)
+    const central = new FakeBleCentral([adv('M5SE-A1B2C3')])
     const result = await pairDevice({
-      central: new FakeBleCentral([adv('M5SE-A1B2C3')]),
+      central,
       storePath: t.path,
       nowMs: 1780128000000,
       confirm: async () => true,
     })
     expect(result).toEqual({ ok: true, deviceId: 'M5SE-A1B2C3' })
+    expect(central.connectedPeripheralUuids).toEqual(['peripheral-M5SE-A1B2C3'])
     const store = readDeviceStore(t.path)
     expect(store.defaultDeviceId).toBe('M5SE-A1B2C3')
     expect(store.devices['M5SE-A1B2C3']).toMatchObject({
@@ -75,6 +77,15 @@ describe('pairDevice', () => {
     })
     expect(result).toEqual({ ok: true, deviceId: 'M5CP-00FFAA' })
     expect(readDeviceStore(t.path).defaultDeviceId).toBe('M5CP-00FFAA')
+  })
+
+  it('finds a bound device by device id', async () => {
+    const central = new FakeBleCentral([adv('M5SE-A1B2C3')])
+    await expect(central.scanBound({ deviceId: 'M5SE-A1B2C3', timeoutMs: 10 })).resolves.toMatchObject({
+      deviceId: 'M5SE-A1B2C3',
+      pairing: true,
+    })
+    await expect(central.scanBound({ deviceId: 'M5SE-NONE', timeoutMs: 10 })).resolves.toBeNull()
   })
 
   it('does not write the store when confirmation is rejected', async () => {
