@@ -29,7 +29,7 @@
   },
   "packageManager": "pnpm@10.33.0",
   "pnpm": {
-    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"]
+    "onlyBuiltDependencies": ["@abandonware/noble", "@biomejs/biome", "esbuild"]
   },
   "dependencies": {
     "serialport": "^13.0.0"
