@@ -8,15 +8,19 @@ unsolicited device events.
 
 - CLI device binding storage lives in `~/.m5stack-coding-toys/devices.json`.
 - `m5ct devices`, `m5ct use`, and `m5ct unpair` manage that store.
-- `m5ct pair` has the command and pairing orchestration path, with a fake BLE
-  central used in tests. The real macOS BLE backend remains isolated behind the
-  `BleCentral` interface and a dynamic noble loader shell.
+- `m5ct pair` uses the real backend path by default. The macOS BLE backend is
+  isolated behind `BleCentral` and dynamically loads optional
+  `@abandonware/noble`; tests use a fake central and fake noble module.
 - daemon status now reports `transport`, `transport_label`, `reconnecting`, and
   `default_device_id`.
+- daemon reads the default paired device, scans for its BLE advertisement, and
+  can auto-connect over BLE. Serial candidates keep higher priority and can
+  override an active BLE session.
 - BLE transport implements a chunked byte-stream wrapper over a `BleLink`.
 - `m5ct screenshot` is intentionally rejected over BLE; use USB for screenshots.
-- firmware has stable readable device ids and a tested `TransportMux`
-  foundation for serial/BLE coexistence.
+- CoreS3 SE firmware exposes a NimBLE GATT byte-stream transport behind
+  `TransportMux(serial, ble)` and supports long-press pairing mode on the
+  waiting screen.
 
 ## Boundaries
 
@@ -29,9 +33,11 @@ buttons, touch, haptic, and notify support.
 
 ## Hardware follow-up
 
-CoreS3 SE hardware validation is still required before claiming real BLE support:
+CoreS3 SE hardware validation is still required before claiming the branch fully
+done:
 
-- wire the real noble central to Core Bluetooth behavior on macOS;
-- add the firmware GATT server transport using the tested mux boundary;
 - confirm `m5ct pair` works without macOS Bluetooth Settings device pairing;
+- confirm a paired default device reconnects over BLE after USB is unplugged;
 - confirm USB can still take over for `m5ct flash` and screenshots.
+
+Cardputer ADV BLE and Linux/Windows BLE are outside this slice.
