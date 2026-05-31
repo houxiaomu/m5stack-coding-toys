@@ -5,6 +5,7 @@ import {
   resolveDeviceId,
   writeDeviceStore,
 } from '@m5stack-coding-toys/daemon'
+import { callOnce, defaultSocket } from './control-client.js'
 
 interface IO {
   log(line: string): void
@@ -14,6 +15,8 @@ interface IO {
 export interface UnpairRunOpts {
   storePath?: string
   io?: IO
+  socket?: string
+  controlCall?: <T = unknown>(sockPath: string, msg: object) => Promise<T>
 }
 
 const defaultIO: IO = {
@@ -36,6 +39,7 @@ export function runUnpair(args: readonly string[], opts: UnpairRunOpts = {}): nu
     const next = removeDevice(store, deviceId)
     writeDeviceStore(path, next)
     io.log(`Unpaired ${deviceId}.`)
+    notifyDaemon(opts)
     if (wasDefault) {
       io.log('No default BLE device is set.')
       io.log('')
@@ -48,4 +52,12 @@ export function runUnpair(args: readonly string[], opts: UnpairRunOpts = {}): nu
     io.error(`m5ct unpair: ${(err as Error).message}`)
     return 1
   }
+}
+
+function notifyDaemon(opts: UnpairRunOpts): void {
+  const sock = opts.socket ?? defaultSocket()
+  const control = opts.controlCall ?? callOnce
+  void Promise.all([control(sock, { op: 'reloadDevices' }), control(sock, { op: 'rescan' })]).catch(
+    () => {},
+  )
 }

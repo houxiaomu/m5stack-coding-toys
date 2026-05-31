@@ -42,6 +42,31 @@ function makeTransportFactory(opens: ('ok' | 'fail')[]) {
   }
 }
 
+function makeKindTransportFactory(seen: DeviceCandidate[]) {
+  return (candidate: DeviceCandidate) => {
+    seen.push(candidate)
+    const t = new EventEmitter() as EventEmitter & {
+      open: () => Promise<void>
+      close: () => Promise<void>
+      write: (b: Buffer | string) => Promise<void>
+      connected: boolean
+      label: string
+      kind: 'serial' | 'ble'
+    }
+    t.connected = false
+    t.label = candidate.label
+    t.kind = candidate.kind as 'serial' | 'ble'
+    t.open = async () => {
+      t.connected = true
+    }
+    t.close = async () => {
+      t.connected = false
+    }
+    t.write = async () => {}
+    return t
+  }
+}
+
 function makeSessionFactory(helloOutcome: 'ok' | 'fail') {
   return (transport: EventEmitter & { open: () => Promise<void> }) => {
     const s = new EventEmitter() as EventEmitter & {
@@ -128,6 +153,67 @@ describe('DeviceManager', () => {
       openKey: '/dev/cu.x',
       priority: 100,
     })
+    dm.stop()
+  })
+
+  it('opens the highest-priority candidate when serial and ble arrive together', async () => {
+    const poller = new FakePoller()
+    const seen: DeviceCandidate[] = []
+    const dm = new DeviceManager({
+      poller: poller as unknown as never,
+      transportFactory: makeKindTransportFactory(seen) as never,
+      sessionFactory: makeSessionFactory('ok') as never,
+    })
+    dm.start()
+    poller.emit('candidate', {
+      kind: 'ble',
+      openKey: 'ble:M5SE-A1B2C3',
+      label: 'ble:M5SE-A1B2C3',
+      priority: 50,
+      deviceId: 'M5SE-A1B2C3',
+      lastSeenAt: 1,
+    })
+    poller.emit('candidate', {
+      kind: 'serial',
+      openKey: '/dev/cu.x',
+      label: '/dev/cu.x',
+      priority: 100,
+      lastSeenAt: 2,
+    })
+    await vi.advanceTimersByTimeAsync(20)
+    expect(seen[0]?.kind).toBe('serial')
+    dm.stop()
+  })
+
+  it('switches from connected ble to a higher-priority serial candidate', async () => {
+    const poller = new FakePoller()
+    const seen: DeviceCandidate[] = []
+    const dm = new DeviceManager({
+      poller: poller as unknown as never,
+      transportFactory: makeKindTransportFactory(seen) as never,
+      sessionFactory: makeSessionFactory('ok') as never,
+    })
+    dm.start()
+    poller.emit('candidate', {
+      kind: 'ble',
+      openKey: 'ble:M5SE-A1B2C3',
+      label: 'ble:M5SE-A1B2C3',
+      priority: 50,
+      deviceId: 'M5SE-A1B2C3',
+      lastSeenAt: 1,
+    })
+    await vi.advanceTimersByTimeAsync(20)
+    expect(dm.state()).toBe<ManagerState>('Connected')
+    poller.emit('candidate', {
+      kind: 'serial',
+      openKey: '/dev/cu.x',
+      label: '/dev/cu.x',
+      priority: 100,
+      lastSeenAt: 2,
+    })
+    await vi.advanceTimersByTimeAsync(20)
+    expect(seen.map((c) => c.kind)).toEqual(['ble', 'serial'])
+    expect(dm.state()).toBe<ManagerState>('Connected')
     dm.stop()
   })
 

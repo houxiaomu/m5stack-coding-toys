@@ -33,6 +33,11 @@ export class BleTransport extends EventEmitter implements Transport {
   async open(): Promise<void> {
     if (this._connected) return
     this.link.onData((bytes) => this.emit('data', Buffer.from(bytes)))
+    this.link.onClose(() => {
+      if (!this._connected) return
+      this._connected = false
+      this.emit('close')
+    })
     this._connected = true
     this.emit('open')
   }

@@ -159,6 +159,26 @@ export class HookServer {
           sock.end(`${JSON.stringify(r)}\n`)
           return
         }
+        case 'pauseBle': {
+          const r = await this.control.pauseBle(client)
+          sock.end(`${JSON.stringify(r)}\n`)
+          return
+        }
+        case 'resumeBle': {
+          const r = await this.control.resumeBle(client)
+          sock.end(`${JSON.stringify(r)}\n`)
+          return
+        }
+        case 'reloadDevices': {
+          const r = this.control.reloadDevices()
+          sock.end(`${JSON.stringify(r)}\n`)
+          return
+        }
+        case 'rescan': {
+          const r = this.control.rescan()
+          sock.end(`${JSON.stringify(r)}\n`)
+          return
+        }
         case 'screenshot': {
           const out = typeof msg.out === 'string' ? msg.out : undefined
           const r = await this.control.screenshot(out)

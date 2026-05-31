@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import type { DevicePoller, PortInfo } from './device-poller.js'
 import type { DeviceProfile, DriftLevel } from './device-profile.js'
 import type { DeviceSession, SessionConfig } from './device-session.js'
-import { type DeviceCandidate, SERIAL_PRIORITY } from './discovery.js'
+import { type DeviceCandidate, type DeviceDiscovery, SERIAL_PRIORITY } from './discovery.js'
 import { makeLogger } from './logger.js'
 import type { Transport } from './transport/interface.js'
 
@@ -16,17 +16,20 @@ export type ManagerState =
   | 'Cooldown'
   | 'Held'
 
-export type TransportFactory = (candidate: DeviceCandidate) => Transport
+export type TransportFactory = (candidate: DeviceCandidate) => Transport | Promise<Transport>
 export type SessionFactory = (transport: Transport, cfg: SessionConfig) => DeviceSession
 
 export interface DeviceManagerOpts {
-  poller: DevicePoller
+  poller?: DevicePoller
+  discoveries?: DeviceDiscovery[]
   transportFactory: TransportFactory
   sessionFactory: SessionFactory
   profile?: DeviceProfile
   cfg?: SessionConfig
   backoffMs?: readonly number[]
   heldTimeoutMs?: number
+  defaultDeviceId?: () => string | null
+  reloadDevices?: () => void
 }
 
 export interface DriftEvent {
@@ -52,17 +55,25 @@ export class DeviceManager extends EventEmitter {
   private heldTimer: NodeJS.Timeout | null = null
   private heldBy: string | null = null
   private started = false
+  private candidateQueue: DeviceCandidate[] = []
+  private candidateDrainScheduled = false
+  private currentPriority = 0
+  private blePausedBy = new Set<string>()
   private readonly backoff: readonly number[]
   private readonly heldTimeoutMs: number
   private readonly cfg: SessionConfig
+  private readonly discoveries: DeviceDiscovery[]
 
   constructor(private readonly opts: DeviceManagerOpts) {
     super()
     this.backoff = opts.backoffMs ?? DEFAULT_BACKOFF
     this.heldTimeoutMs = opts.heldTimeoutMs ?? 60000
     this.cfg = opts.cfg ?? DEFAULT_CFG
-    opts.poller.on('candidate', (candidate: DeviceCandidate) => this.onCandidate(candidate))
-    opts.poller.on('attached', (info: PortInfo) => this.onCandidate(serialCandidate(info)))
+    this.discoveries = opts.discoveries ?? (opts.poller ? [opts.poller] : [])
+    for (const discovery of this.discoveries) {
+      discovery.on('candidate', (candidate: DeviceCandidate) => this.onCandidate(candidate))
+      discovery.on('attached', (info: PortInfo) => this.onCandidate(serialCandidate(info)))
+    }
   }
 
   start(): void {
@@ -71,7 +82,7 @@ export class DeviceManager extends EventEmitter {
     log.info('start')
     // Initial state is already 'Scanning', so transition() would no-op.
     // Kick the poller explicitly here.
-    this.opts.poller.start()
+    this.syncDiscoveries()
     this.emit('state', this._state, { from: this._state })
   }
 
@@ -85,7 +96,10 @@ export class DeviceManager extends EventEmitter {
     this.heldTimer = null
     if (this.session) this.session.destroy()
     this.session = null
-    this.opts.poller.stop()
+    this.currentTransport = null
+    this.currentPriority = 0
+    this.candidateQueue = []
+    for (const discovery of this.discoveries) discovery.stop()
   }
 
   state(): ManagerState {
@@ -93,6 +107,38 @@ export class DeviceManager extends EventEmitter {
   }
   currentSession(): DeviceSession | null {
     return this.session
+  }
+
+  defaultDeviceId(): string | null {
+    return this.opts.defaultDeviceId?.() ?? null
+  }
+
+  async pauseBle(clientId: string): Promise<{ ok: true }> {
+    this.blePausedBy.add(clientId)
+    this.candidateQueue = this.candidateQueue.filter((candidate) => candidate.kind !== 'ble')
+    this.syncDiscoveries()
+    return { ok: true }
+  }
+
+  async resumeBle(clientId: string): Promise<{ ok: true }> {
+    this.blePausedBy.delete(clientId)
+    this.syncDiscoveries()
+    this.rescan()
+    return { ok: true }
+  }
+
+  reloadDevices(): { ok: true } {
+    this.opts.reloadDevices?.()
+    return { ok: true }
+  }
+
+  rescan(): { ok: true } {
+    if (!this.started) return { ok: true }
+    for (const discovery of this.discoveries) {
+      discovery.stop()
+      discovery.start()
+    }
+    return { ok: true }
   }
 
   async flashHold(clientId: string): Promise<{
@@ -151,20 +197,27 @@ export class DeviceManager extends EventEmitter {
     this._state = next
     log.info('state', { from: prev, to: next })
     this.emit('state', next, { from: prev })
-    if (next === 'Scanning') this.opts.poller.start()
-    else this.opts.poller.stop()
+    this.syncDiscoveries()
+    if (next === 'Scanning') this.scheduleCandidateDrain()
   }
 
   private onCandidate(candidate: DeviceCandidate): void {
+    if (this.blePausedBy.size > 0 && candidate.kind === 'ble') return
+    if (this._state === 'Connected') {
+      if (candidate.priority > this.currentPriority) void this.replaceWithCandidate(candidate)
+      return
+    }
     if (this._state !== 'Scanning') return
-    void this.openAndHandshake(candidate)
+    this.candidateQueue.push(candidate)
+    this.scheduleCandidateDrain()
   }
 
   private async openAndHandshake(candidate: DeviceCandidate): Promise<void> {
+    if (this._state !== 'Scanning') return
     this.transition('Opening')
     let transport: Transport
     try {
-      transport = this.opts.transportFactory(candidate)
+      transport = await this.opts.transportFactory(candidate)
       this.currentTransport = transport
       await transport.open()
     } catch (err) {
@@ -185,6 +238,7 @@ export class DeviceManager extends EventEmitter {
       return
     }
     this.session = session
+    this.currentPriority = candidate.priority
     session.on('disconnect', () => {
       if (this.session === session) {
         this.session = null
@@ -204,6 +258,54 @@ export class DeviceManager extends EventEmitter {
         const event: DriftEvent = { board, expected, actual: fw, level }
         this.emit('drift', event)
       }
+    }
+  }
+
+  private scheduleCandidateDrain(): void {
+    if (this.candidateDrainScheduled) return
+    this.candidateDrainScheduled = true
+    setImmediate(() => {
+      this.candidateDrainScheduled = false
+      this.drainCandidates()
+    })
+  }
+
+  private drainCandidates(): void {
+    if (this._state !== 'Scanning') return
+    const candidate = this.candidateQueue
+      .splice(0)
+      .sort((a, b) => b.priority - a.priority || b.lastSeenAt - a.lastSeenAt)[0]
+    if (!candidate) return
+    void this.openAndHandshake(candidate)
+  }
+
+  private async replaceWithCandidate(candidate: DeviceCandidate): Promise<void> {
+    const oldSession = this.session
+    const oldTransport = this.currentTransport
+    this.session = null
+    this.currentTransport = null
+    this.currentPriority = 0
+    this.transition('Scanning')
+    oldSession?.destroy()
+    if (oldTransport) {
+      try {
+        await oldTransport.close()
+      } catch {
+        /* ignore */
+      }
+    }
+    await this.openAndHandshake(candidate)
+  }
+
+  private syncDiscoveries(): void {
+    if (!this.started) return
+    const shouldRun =
+      this._state === 'Scanning' ||
+      (this._state === 'Connected' && this.currentTransport?.kind === 'ble')
+    if (shouldRun) {
+      for (const discovery of this.discoveries) discovery.start()
+    } else {
+      for (const discovery of this.discoveries) discovery.stop()
     }
   }
 

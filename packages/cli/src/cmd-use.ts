@@ -5,6 +5,7 @@ import {
   setDefaultDevice,
   writeDeviceStore,
 } from '@m5stack-coding-toys/daemon'
+import { callOnce, defaultSocket } from './control-client.js'
 
 interface IO {
   log(line: string): void
@@ -14,6 +15,8 @@ interface IO {
 export interface UseRunOpts {
   storePath?: string
   io?: IO
+  socket?: string
+  controlCall?: <T = unknown>(sockPath: string, msg: object) => Promise<T>
 }
 
 const defaultIO: IO = {
@@ -34,9 +37,18 @@ export function runUse(args: readonly string[], opts: UseRunOpts = {}): number {
     const deviceId = resolveDeviceId(store, query)
     writeDeviceStore(path, setDefaultDevice(store, deviceId))
     io.log(`Default device set to ${deviceId}.`)
+    notifyDaemon(opts)
     return 0
   } catch (err) {
     io.error(`m5ct use: ${(err as Error).message}`)
     return 1
   }
+}
+
+function notifyDaemon(opts: UseRunOpts): void {
+  const sock = opts.socket ?? defaultSocket()
+  const control = opts.controlCall ?? callOnce
+  void Promise.all([control(sock, { op: 'reloadDevices' }), control(sock, { op: 'rescan' })]).catch(
+    () => {},
+  )
 }

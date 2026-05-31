@@ -62,6 +62,23 @@ export function removeDevice(data: DeviceStoreData, deviceId: string): DeviceSto
   return next
 }
 
+export function markDeviceSeen(
+  data: DeviceStoreData,
+  deviceId: string,
+  seen: { lastSeenAt: number; lastTransport: 'ble' | 'serial'; peripheralUuid?: string },
+): DeviceStoreData {
+  const current = data.devices[deviceId]
+  if (!current) return clone(data)
+  const next = clone(data)
+  next.devices[deviceId] = {
+    ...current,
+    lastSeenAt: seen.lastSeenAt,
+    lastTransport: seen.lastTransport,
+    peripheralUuid: seen.peripheralUuid ?? current.peripheralUuid,
+  }
+  return next
+}
+
 export function resolveDeviceId(data: DeviceStoreData, query: string): string {
   if (data.devices[query]) return query
   const matches = Object.keys(data.devices).filter((id) => id.startsWith(query))

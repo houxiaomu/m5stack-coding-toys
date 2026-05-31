@@ -15,8 +15,13 @@ class MemoryBleLink extends EventEmitter {
     this.on('data', fn)
   }
 
+  onClose(fn: () => void): void {
+    this.on('close', fn)
+  }
+
   async close(): Promise<void> {
     this.closed = true
+    this.emit('close')
   }
 }
 

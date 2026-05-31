@@ -71,10 +71,25 @@ describe('control ops over socket', () => {
         },
       }
     },
+    defaultDeviceId() {
+      return null
+    },
     async flashHold(_c: string) {
       return { ok: true, prevState: 'Connected' as const }
     },
     async flashRelease(_c: string) {
+      return { ok: true }
+    },
+    async pauseBle(_c: string) {
+      return { ok: true }
+    },
+    async resumeBle(_c: string) {
+      return { ok: true }
+    },
+    reloadDevices() {
+      return { ok: true }
+    },
+    rescan() {
       return { ok: true }
     },
   })
@@ -119,6 +134,13 @@ describe('control ops over socket', () => {
     expect(a.ok).toBe(true)
     const b = JSON.parse(await rpc(sock, { op: 'flashRelease', client: 'c1' })) as { ok: boolean }
     expect(b.ok).toBe(true)
+  })
+
+  it('BLE management ops round trip', async () => {
+    expect(JSON.parse(await rpc(sock, { op: 'pauseBle', client: 'pair' }))).toEqual({ ok: true })
+    expect(JSON.parse(await rpc(sock, { op: 'resumeBle', client: 'pair' }))).toEqual({ ok: true })
+    expect(JSON.parse(await rpc(sock, { op: 'reloadDevices' }))).toEqual({ ok: true })
+    expect(JSON.parse(await rpc(sock, { op: 'rescan' }))).toEqual({ ok: true })
   })
 
   it('unknown op returns error', async () => {

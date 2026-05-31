@@ -15,12 +15,21 @@ export {
   removeDevice,
   resolveDeviceId,
   setDefaultDevice,
+  markDeviceSeen,
   writeDeviceStore,
   type DeviceStoreData,
   type PairedDevice,
 } from './device-store.js'
 export { FakeBleCentral } from './ble/fake.js'
 export { createNobleCentral } from './ble/backend-noble.js'
+export { BleDiscovery } from './ble/discovery.js'
+export {
+  M5CT_BLE_DEFAULT_CHUNK_SIZE,
+  M5CT_BLE_INFO_UUID,
+  M5CT_BLE_RX_UUID,
+  M5CT_BLE_SERVICE_UUID,
+  M5CT_BLE_TX_UUID,
+} from './ble/constants.js'
 export { pairDevice, type PairDeviceOpts } from './ble/pairing.js'
 export { BleUnavailableError } from './ble/types.js'
 export type { BleAdvertisement, BleCentral, BleLink, PairDeviceResult } from './ble/types.js'

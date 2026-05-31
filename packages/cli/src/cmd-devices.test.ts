@@ -91,6 +91,25 @@ describe('device management commands', () => {
     expect(c.errs).toEqual([])
   })
 
+  it('notifies the daemon after changing the default device', () => {
+    const t = tempStore()
+    cleanup.push(t.dir)
+    seed(t.path)
+    const c = capture()
+    const calls: object[] = []
+    expect(
+      runUse(['M5CP'], {
+        storePath: t.path,
+        io: c.io,
+        controlCall: async (_sock, msg) => {
+          calls.push(msg)
+          return { ok: true }
+        },
+      }),
+    ).toBe(0)
+    expect(calls).toEqual([{ op: 'reloadDevices' }, { op: 'rescan' }])
+  })
+
   it('reports ambiguous device prefixes', () => {
     const t = tempStore()
     cleanup.push(t.dir)
@@ -114,5 +133,24 @@ describe('device management commands', () => {
       '  m5ct pair',
       '  m5ct use <device>',
     ])
+  })
+
+  it('notifies the daemon after unpairing a device', () => {
+    const t = tempStore()
+    cleanup.push(t.dir)
+    seed(t.path)
+    const c = capture()
+    const calls: object[] = []
+    expect(
+      runUnpair(['M5CP'], {
+        storePath: t.path,
+        io: c.io,
+        controlCall: async (_sock, msg) => {
+          calls.push(msg)
+          return { ok: true }
+        },
+      }),
+    ).toBe(0)
+    expect(calls).toEqual([{ op: 'reloadDevices' }, { op: 'rescan' }])
   })
 })

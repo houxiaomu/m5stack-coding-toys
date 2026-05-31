@@ -16,7 +16,23 @@ import { type LogLevel, closeLogFile, makeLogger, setLogFile, setLogLevel } from
 import { Router } from './router.js'
 import { SessionAggregator } from './session-aggregator.js'
 import { acquireLock, defaultAlive, releaseLock, shouldExitIdle } from './singleton.js'
-import { aggregatorStatePath, logPath, pidPath, socketPath, stateDir } from './state-dir.js'
+import {
+  aggregatorStatePath,
+  devicesPath,
+  logPath,
+  pidPath,
+  socketPath,
+  stateDir,
+} from './state-dir.js'
+import { createNobleCentral } from './ble/backend-noble.js'
+import { BleDiscovery } from './ble/discovery.js'
+import {
+  type DeviceStoreData,
+  markDeviceSeen,
+  readDeviceStore,
+  writeDeviceStore,
+} from './device-store.js'
+import { BleTransport } from './transport/ble.js'
 import { FakeStdioTransport } from './transport/fake-stdio.js'
 import type { Transport } from './transport/interface.js'
 import { SerialTransport } from './transport/serial.js'
@@ -64,11 +80,42 @@ async function main(): Promise<void> {
   const profile = new DeviceProfile(fwDist)
 
   const poller = new DevicePoller({ vendorIds: ['303a'], intervalMs: 2000 })
+  const storePath = devicesPath()
+  let deviceStore: DeviceStoreData = readDeviceStore(storePath)
+  const reloadDevices = (): void => {
+    deviceStore = readDeviceStore(storePath)
+  }
+  const defaultBleDevice = () => {
+    const id = deviceStore.defaultDeviceId
+    return id ? (deviceStore.devices[id] ?? null) : null
+  }
+  const bleCentral =
+    cfg.transport.kind === 'serial'
+      ? await createNobleCentral().catch((err) => {
+          log.warn('BLE backend unavailable', { error: (err as Error).message })
+          return null
+        })
+      : null
+  const bleDiscovery = bleCentral
+    ? new BleDiscovery({
+        central: bleCentral,
+        getDefaultDevice: defaultBleDevice,
+        intervalMs: 5000,
+        scanTimeoutMs: 1500,
+      })
+    : null
   const dm = new DeviceManager({
-    poller,
+    discoveries: bleDiscovery ? [poller, bleDiscovery] : [poller],
     profile,
-    transportFactory: (candidate): Transport => {
+    defaultDeviceId: () => deviceStore.defaultDeviceId,
+    reloadDevices,
+    transportFactory: async (candidate): Promise<Transport> => {
       if (cfg.transport.kind === 'fake-stdio') return new FakeStdioTransport(cfg.transport.cmd)
+      if (candidate.kind === 'ble') {
+        if (!bleCentral || !candidate.ble) throw new Error('BLE candidate missing advertisement')
+        const link = await bleCentral.connect(candidate.ble, { timeoutMs: 5000 })
+        return new BleTransport(link)
+      }
       if (cfg.transport.kind === 'serial') {
         return new SerialTransport({ port: candidate.openKey, baud: cfg.transport.baud })
       }
@@ -94,6 +141,13 @@ async function main(): Promise<void> {
   dm.on('connected', () => {
     const sess = dm.currentSession()
     if (sess) sess.on('event', (env) => void router.handleDeviceEvent(env))
+    if (sess?.transportKind === 'ble' && sess.info?.device_id) {
+      deviceStore = markDeviceSeen(deviceStore, sess.info.device_id, {
+        lastSeenAt: Date.now(),
+        lastTransport: 'ble',
+      })
+      writeDeviceStore(storePath, deviceStore)
+    }
   })
 
   const sock = cfg.socket || socketPath()
@@ -128,6 +182,7 @@ async function main(): Promise<void> {
     if (idleTimer != null) clearInterval(idleTimer)
     log.info('shutdown requested')
     dm.stop()
+    await bleCentral?.close().catch(() => {})
     await server.close()
     releaseLock(pidPath())
     await closeLogFile()

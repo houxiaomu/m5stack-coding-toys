@@ -28,6 +28,10 @@ export interface ControlHandler {
   subscribeState(sock: Socket): void
   flashHold(clientId: string): Promise<unknown>
   flashRelease(clientId: string): Promise<unknown>
+  pauseBle(clientId: string): Promise<unknown>
+  resumeBle(clientId: string): Promise<unknown>
+  reloadDevices(): unknown
+  rescan(): unknown
   screenshot(out?: string): Promise<{ ok: true; path: string } | { error: string }>
   tap(x: number, y: number, durationMs: number): Promise<{ ok: true } | { error: string }>
 }
@@ -42,7 +46,7 @@ export function makeControlHandler(dm: DeviceManager): ControlHandler {
         transport: sess?.transportKind ?? null,
         transport_label: sess?.transportLabel ?? null,
         reconnecting: dm.state() === 'Cooldown',
-        default_device_id: null,
+        default_device_id: dm.defaultDeviceId(),
         board: sess?.info?.board ?? null,
         fw: sess?.info?.fw ?? null,
         caps: sess?.info?.caps ?? [],
@@ -70,6 +74,18 @@ export function makeControlHandler(dm: DeviceManager): ControlHandler {
     },
     flashRelease(clientId: string) {
       return dm.flashRelease(clientId)
+    },
+    pauseBle(clientId: string) {
+      return dm.pauseBle(clientId)
+    },
+    resumeBle(clientId: string) {
+      return dm.resumeBle(clientId)
+    },
+    reloadDevices() {
+      return dm.reloadDevices()
+    },
+    rescan() {
+      return dm.rescan()
     },
     async screenshot(out?: string): Promise<{ ok: true; path: string } | { error: string }> {
       const sess = dm.currentSession()
