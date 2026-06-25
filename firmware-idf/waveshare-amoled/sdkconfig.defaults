@@ -1,0 +1,61 @@
+# ---- Target ----
+CONFIG_IDF_TARGET="esp32s3"
+
+# ---- Flash: 32MB, QIO, 80MHz ----
+CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# ---- Custom partition table ----
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# ---- CPU 240MHz ----
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# ---- Octal PSRAM 8MB @ 80MHz ----
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
+CONFIG_SPIRAM_RODATA=y
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+
+# ---- Main task ----
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# ---- Console routing ----
+# CRITICAL: the USB-Serial/JTAG port is the NDJSON protocol channel to the host
+# daemon. ESP-IDF logs MUST NOT go out that port or they corrupt the framing.
+# Route the console (and ROM logs) to UART0 (GPIO43 TX / GPIO44 RX, the board's
+# debug header) and keep USB-Serial/JTAG exclusively for the m5ct protocol,
+# driven by our own usb_serial_jtag driver in proto.c.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART_NUM=0
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+CONFIG_ESP_CONSOLE_ROM_SERIAL_PORT_NUM=0
+
+# ---- FreeRTOS tick ----
+CONFIG_FREERTOS_HZ=1000
+
+# ---- LVGL ----
+CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_FONT_MONTSERRAT_16=y
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_24=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
+CONFIG_LV_FONT_MONTSERRAT_36=y
+CONFIG_LV_FONT_MONTSERRAT_48=y
+CONFIG_LV_USE_ARC=y
+CONFIG_LV_USE_ROLLER=y
+CONFIG_LV_USE_SWITCH=y
+CONFIG_LV_USE_LIST=y
+CONFIG_LV_USE_SNAPSHOT=y
+
+# Larger LVGL buffer in PSRAM is handled by the BSP adapter.
+
+# Route LVGL allocations through the C library malloc (which is PSRAM-backed via
+# CONFIG_SPIRAM_USE_MALLOC) instead of LVGL's tiny 64 KB builtin pool. Needed so
+# lv_snapshot_take() can allocate the full 466x466 framebuffer for screenshots.
+CONFIG_LV_USE_BUILTIN_MALLOC=n
+CONFIG_LV_USE_CLIB_MALLOC=y

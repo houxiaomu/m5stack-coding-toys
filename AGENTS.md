@@ -13,6 +13,10 @@ A physical hardware status display for Claude Code (consolidated status, like cc
 
 - **4 TS packages** — `@m5stack-coding-toys/{protocol,daemon,cli,statusline-shim}` (the old `hook-shim` was removed).
 - **`firmware/`** — PlatformIO, multiple envs (C++ / M5GFX / M5Unified).
+- **`firmware-idf/waveshare-amoled/`** — third board: Waveshare ESP32-S3 round
+  466×466 AMOLED. ESP-IDF v5.5 + LVGL 9 (the only stack the CO5300 panel
+  supports), so it's a separate tree from the PlatformIO `firmware/`. Same
+  `m5ct` protocol, no host changes. See its `README.md`.
 - **`tools/{gen-msgs,fake-firmware}`** — protocol→C++ header codegen, and a host-side device emulator for hardware-free e2e tests.
 - **Bins:** `m5ctd` (daemon), `m5ct` (CLI), `m5ct-statusline` (shim). Runtime dir `~/.m5stack-coding-toys/`.
 

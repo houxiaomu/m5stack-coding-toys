@@ -1,0 +1,8 @@
+## Managed component dependencies for the Waveshare round-AMOLED statusbar
+## firmware. The Waveshare BSP transitively pulls in CO5300 (display QSPI),
+## CST9217 (touch), ES8311/ES7210 (audio) and the LVGL adapter.
+dependencies:
+  idf:
+    version: ">=5.5"
+  waveshare/esp32_s3_touch_amoled_1_75:
+    version: "^3.0.0"

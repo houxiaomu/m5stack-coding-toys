@@ -1,0 +1,19 @@
+idf_component_register(
+    SRCS
+        "app_main.c"
+        "model.c"
+        "proto.c"
+        "ui.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        waveshare__esp32_s3_touch_amoled_1_75
+        espressif__esp_lvgl_adapter
+        lvgl__lvgl
+        esp_driver_i2c
+        esp_lcd
+        nvs_flash
+        driver
+        esp_driver_usb_serial_jtag
+        json
+        esp_timer
+)
