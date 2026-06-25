@@ -10,25 +10,28 @@ ships a UI redesigned from scratch for a circular, true-black OLED.
 > target is **ESP-IDF v5.5 + LVGL 9** on the official Waveshare BSP, because that
 > is the only supported stack for this panel. Hence it lives in `firmware-idf/`.
 
-## The "Halo" UI
+## UI
 
-Everything is concentric on a black background (AMOLED pixels off → deep
-contrast, low power). Three link states drive the layout:
+Flat colour on true black (AMOLED pixels off → deep contrast, low power). All
+elements are solid fills + text — no gradients or soft shadows, which avoids
+RGB565 colour-banding. Three link states drive the layout:
 
 - **No link / linked-idle** — a calm clock face: big `HH:MM`, date, and a status
   pill (`NO LINK` grey / `LINKED · <model>` green). Screen dims at no-link.
 - **Live** (active Claude session) — the dashboard:
-  - **Outer ring** = context-window usage, colour-graded sky→amber→red (red also
-    when >200k).
-  - **Inner thin ring** = 5-hour block usage.
-  - **Centre orb** = the activity beacon, colour + breathing speed encode state:
-    cyan/slow = working, amber = awaiting input, red/fast = needs attention.
-  - Model pill (top), big primary metric (`$cost`, or context % if no cost),
-    a `ctx · duration · +/-lines` subline, and a git `branch  N*` footer.
+  - **Outer bezel ring** = the activity animation. **Working** sweeps a bright
+    cyan segment around the rim (spinner); **awaiting** is a calm full amber
+    ring; **needs-attention** is a pulsing full red ring.
+  - **Activity label** in the activity colour (WORKING / AWAITING / ATTENTION).
+  - Model pill (top), big `$cost` (or context % if no cost), a
+    `duration · +/-lines` subline.
+  - **Three horizontal usage bars** — `CTX` (context window), `5H` (5-hour
+    block), `WK` (weekly), each colour-graded sky→amber→red by fill.
+  - Git `branch  N*` footer.
 - **Sessions page** — tap the screen (when >1 session) to flip to a list of
   sessions with per-session activity dots; tapping one sends a `focus` event so
   the host foregrounds it. Tap empty space to flip back.
-- **Notify overlay** — host `notify` shows a full-screen pulsing halo (red=high)
+- **Notify overlay** — host `notify` shows a full-screen pulsing ring (red=high)
   with title/body; tap to dismiss (low/normal auto-dismiss after 8s).
 
 ## Protocol
@@ -41,8 +44,8 @@ Standard `m5ct` envelope `{v,k,t,p,id?}`, NDJSON framed, over the chip's native
 - parses `status` into `g_model` (see `main/model.h`) for the UI
 - `notify` → overlay + `notify.ack`; `tap` → `tap.ack`
 - `screenshot` → raw **big-endian RGB565** frame, base64-streamed in the ack
-  (host encodes the PNG). Downsampled 4× (116×116) so the whole frame streams
-  inside the host's 5 s request timeout.
+  (host encodes the PNG). Full 466×466 streams in ~0.9 s (well inside the host's
+  5 s timeout) thanks to chunked TX; `ui.c`'s `sf` can downsample if ever needed.
 - sends `device.event {kind:focus,…}` on session taps.
 
 `device_id` is `WAVE-<MAC>` (e.g. `WAVE-288485551DBC`).

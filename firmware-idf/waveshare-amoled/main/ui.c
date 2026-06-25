@@ -17,30 +17,34 @@
 #include "model.h"
 #include "proto.h"
 
-// ---- palette (true black background; content glows) ----
+// ---- palette (true black background; flat colours — no gradients/shadows, so
+//      no RGB565 banding) ----
 #define COL_BG 0x000000
 #define COL_WHITE 0xF1F5F9
 #define COL_DIM 0x64748B
-#define COL_TRACK 0x1E293B
+#define COL_FAINT 0x1E293B   // bar tracks / dim ring
+#define COL_FAINT2 0x0E1626  // edge ring track
 #define COL_WORKING 0x22D3EE   // cyan
 #define COL_AWAITING 0xF59E0B  // amber
 #define COL_ATTENTION 0xEF4444 // red
 #define COL_LINKED 0x22C55E    // green
-#define COL_CTX_OK 0x38BDF8    // sky
-#define COL_CTX_WARN 0xF59E0B
-#define COL_CTX_HOT 0xEF4444
-#define COL_ADDED 0x22C55E
-#define COL_REMOVED 0xF87171
+#define COL_OK 0x38BDF8        // sky (usage low)
+#define COL_WARN 0xF59E0B      // usage mid
+#define COL_HOT 0xEF4444       // usage high
+
+#define N_BARS 3
+#define BAR_W 120
+#define BAR_H 8
 
 typedef enum { PAGE_LIVE = 0, PAGE_SESSIONS } page_t;
 
 // ---- widgets ----
 static lv_obj_t *scr;
-static lv_obj_t *ctx_arc, *block_arc;
+static lv_obj_t *ring;                 // outer edge: dim track + moving segment
 static lv_obj_t *model_pill, *model_lbl;
-static lv_obj_t *orb;
 static lv_obj_t *activity_lbl;
 static lv_obj_t *metric_big, *metric_sub, *git_lbl;
+static lv_obj_t *bar_name[N_BARS], *bar_track[N_BARS], *bar_fill[N_BARS], *bar_val[N_BARS];
 static lv_obj_t *clock_lbl, *date_lbl, *idle_pill, *idle_pill_lbl;
 static lv_obj_t *sess_cont, *sess_title;
 static lv_obj_t *sess_row[MODEL_MAX_SESSIONS], *sess_dot[MODEL_MAX_SESSIONS],
@@ -48,8 +52,10 @@ static lv_obj_t *sess_row[MODEL_MAX_SESSIONS], *sess_dot[MODEL_MAX_SESSIONS],
 static lv_obj_t *notify_cont, *notify_ring, *notify_title, *notify_body, *notify_hint;
 
 static page_t s_page = PAGE_LIVE;
-static float s_phase = 0.0f;
+static int s_spin = 0;     // spinner rotation (deg)
+static float s_pulse = 0;  // attention/notify pulse phase
 static char s_row_id[MODEL_MAX_SESSIONS][24];
+static const char *BAR_LABELS[N_BARS] = {"CTX", "5H", "WK"};
 
 static void tick_cb(lv_timer_t *t);
 
@@ -79,6 +85,10 @@ static const char *activity_text(activity_t a) {
     }
 }
 
+static uint32_t usage_color(int pct) {
+    return pct < 60 ? COL_OK : (pct < 85 ? COL_WARN : COL_HOT);
+}
+
 // ------------------------------------------------------------- events ----
 
 static void on_scr_click(lv_event_t *e) {
@@ -91,7 +101,7 @@ static void on_scr_click(lv_event_t *e) {
         g_model.dirty = true;
     }
     model_unlock();
-    if (notif) return; // first tap just clears the alert
+    if (notif) return;
     if (multi) s_page = (s_page == PAGE_LIVE) ? PAGE_SESSIONS : PAGE_LIVE;
 }
 
@@ -117,24 +127,6 @@ static lv_obj_t *make_pill(lv_obj_t *parent, uint32_t bg) {
     return p;
 }
 
-static void setup_ring(lv_obj_t *a, int size, int width, uint32_t track) {
-    lv_obj_set_size(a, size, size);
-    lv_obj_center(a);
-    lv_arc_set_rotation(a, 270);
-    lv_arc_set_bg_angles(a, 0, 360);
-    lv_arc_set_range(a, 0, 100);
-    lv_arc_set_value(a, 0);
-    lv_obj_remove_flag(a, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_arc_width(a, width, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(a, width, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(a, lv_color_hex(track), LV_PART_MAIN);
-    lv_obj_set_style_arc_rounded(a, true, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_rounded(a, false, LV_PART_MAIN);
-    // hide the draggable knob
-    lv_obj_set_style_bg_opa(a, LV_OPA_TRANSP, LV_PART_KNOB);
-    lv_obj_set_style_pad_all(a, 0, LV_PART_KNOB);
-}
-
 void ui_init(void) {
     scr = lv_screen_active();
     lv_obj_set_style_bg_color(scr, lv_color_hex(COL_BG), 0);
@@ -143,54 +135,86 @@ void ui_init(void) {
     lv_obj_add_flag(scr, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(scr, on_scr_click, LV_EVENT_CLICKED, NULL);
 
-    // --- rings ---
-    ctx_arc = lv_arc_create(scr);
-    setup_ring(ctx_arc, 452, 12, COL_TRACK);
-    lv_obj_set_style_arc_color(ctx_arc, lv_color_hex(COL_CTX_OK), LV_PART_INDICATOR);
+    // --- outer edge ring: faint full-circle track + a bright moving segment ---
+    ring = lv_arc_create(scr);
+    lv_obj_set_size(ring, 458, 458);
+    lv_obj_center(ring);
+    lv_arc_set_bg_angles(ring, 0, 360);
+    lv_arc_set_angles(ring, 0, 60); // indicator segment; rotated each tick
+    lv_obj_remove_flag(ring, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_arc_width(ring, 3, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(ring, lv_color_hex(COL_FAINT2), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(ring, 7, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(ring, lv_color_hex(COL_WORKING), LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(ring, true, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(ring, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(ring, 0, LV_PART_KNOB);
 
-    block_arc = lv_arc_create(scr);
-    setup_ring(block_arc, 420, 5, COL_TRACK);
-    lv_obj_set_style_arc_color(block_arc, lv_color_hex(COL_AWAITING), LV_PART_INDICATOR);
-
-    // --- live: model pill (top) ---
+    // --- model pill (top) ---
     model_pill = make_pill(scr, COL_DIM);
-    lv_obj_align(model_pill, LV_ALIGN_CENTER, 0, -150);
+    lv_obj_align(model_pill, LV_ALIGN_CENTER, 0, -132);
     model_lbl = lv_label_create(model_pill);
     lv_obj_set_style_text_font(model_lbl, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(model_lbl, lv_color_hex(COL_WHITE), 0);
     lv_label_set_text(model_lbl, "Claude");
 
-    // --- live: activity orb ---
-    orb = lv_obj_create(scr);
-    lv_obj_remove_style_all(orb);
-    lv_obj_set_size(orb, 96, 96);
-    lv_obj_align(orb, LV_ALIGN_CENTER, 0, -68);
-    lv_obj_set_style_radius(orb, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(orb, lv_color_hex(COL_WORKING), 0);
-    lv_obj_set_style_bg_opa(orb, LV_OPA_COVER, 0);
-    lv_obj_set_style_shadow_color(orb, lv_color_hex(COL_WORKING), 0);
-    lv_obj_set_style_shadow_width(orb, 30, 0);
-    lv_obj_set_style_shadow_spread(orb, 2, 0);
-    lv_obj_remove_flag(orb, LV_OBJ_FLAG_CLICKABLE);
-
+    // --- activity (the live focal text, in the activity colour) ---
     activity_lbl = lv_label_create(scr);
-    lv_obj_set_style_text_font(activity_lbl, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(activity_lbl, lv_color_hex(COL_WHITE), 0);
-    lv_obj_align(activity_lbl, LV_ALIGN_CENTER, 0, 8);
+    lv_obj_set_style_text_font(activity_lbl, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(activity_lbl, lv_color_hex(COL_WORKING), 0);
+    lv_obj_align(activity_lbl, LV_ALIGN_CENTER, 0, -86);
     lv_label_set_text(activity_lbl, "ACTIVE");
 
+    // --- primary metric ($cost) ---
     metric_big = lv_label_create(scr);
-    lv_obj_set_style_text_font(metric_big, &lv_font_montserrat_36, 0);
+    lv_obj_set_style_text_font(metric_big, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_color(metric_big, lv_color_hex(COL_WHITE), 0);
-    lv_obj_align(metric_big, LV_ALIGN_CENTER, 0, 48);
+    lv_obj_align(metric_big, LV_ALIGN_CENTER, 0, -40);
     lv_label_set_text(metric_big, "");
 
     metric_sub = lv_label_create(scr);
     lv_obj_set_style_text_font(metric_sub, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(metric_sub, lv_color_hex(COL_DIM), 0);
-    lv_obj_align(metric_sub, LV_ALIGN_CENTER, 0, 88);
+    lv_obj_align(metric_sub, LV_ALIGN_CENTER, 0, -4);
     lv_label_set_text(metric_sub, "");
 
+    // --- usage bars (horizontal) ---
+    for (int i = 0; i < N_BARS; i++) {
+        int y = 30 + i * 30;
+        lv_obj_t *nm = lv_label_create(scr);
+        lv_obj_set_style_text_font(nm, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_color(nm, lv_color_hex(COL_DIM), 0);
+        lv_obj_align(nm, LV_ALIGN_CENTER, -96, y);
+        lv_label_set_text(nm, BAR_LABELS[i]);
+        bar_name[i] = nm;
+
+        lv_obj_t *tr = lv_obj_create(scr);
+        lv_obj_remove_style_all(tr);
+        lv_obj_set_size(tr, BAR_W, BAR_H);
+        lv_obj_align(tr, LV_ALIGN_CENTER, 6, y);
+        lv_obj_set_style_radius(tr, BAR_H / 2, 0);
+        lv_obj_set_style_bg_color(tr, lv_color_hex(COL_FAINT), 0);
+        lv_obj_set_style_bg_opa(tr, LV_OPA_COVER, 0);
+        bar_track[i] = tr;
+
+        lv_obj_t *fl = lv_obj_create(tr);
+        lv_obj_remove_style_all(fl);
+        lv_obj_set_size(fl, 0, BAR_H);
+        lv_obj_align(fl, LV_ALIGN_LEFT_MID, 0, 0);
+        lv_obj_set_style_radius(fl, BAR_H / 2, 0);
+        lv_obj_set_style_bg_color(fl, lv_color_hex(COL_OK), 0);
+        lv_obj_set_style_bg_opa(fl, LV_OPA_COVER, 0);
+        bar_fill[i] = fl;
+
+        lv_obj_t *vl = lv_label_create(scr);
+        lv_obj_set_style_text_font(vl, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_color(vl, lv_color_hex(COL_WHITE), 0);
+        lv_obj_align(vl, LV_ALIGN_CENTER, 96, y);
+        lv_label_set_text(vl, "--");
+        bar_val[i] = vl;
+    }
+
+    // --- git footer ---
     git_lbl = lv_label_create(scr);
     lv_obj_set_style_text_font(git_lbl, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(git_lbl, lv_color_hex(COL_DIM), 0);
@@ -226,7 +250,7 @@ void ui_init(void) {
 
     sess_cont = lv_obj_create(scr);
     lv_obj_remove_style_all(sess_cont);
-    lv_obj_set_size(sess_cont, 300, 280);
+    lv_obj_set_size(sess_cont, 300, 290);
     lv_obj_align(sess_cont, LV_ALIGN_CENTER, 0, 10);
     lv_obj_set_flex_flow(sess_cont, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(sess_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
@@ -237,9 +261,9 @@ void ui_init(void) {
     for (int i = 0; i < MODEL_MAX_SESSIONS; i++) {
         lv_obj_t *row = lv_obj_create(sess_cont);
         lv_obj_remove_style_all(row);
-        lv_obj_set_size(row, 280, 34);
-        lv_obj_set_style_radius(row, 17, 0);
-        lv_obj_set_style_bg_color(row, lv_color_hex(COL_TRACK), 0);
+        lv_obj_set_size(row, 280, 32);
+        lv_obj_set_style_radius(row, 16, 0);
+        lv_obj_set_style_bg_color(row, lv_color_hex(COL_FAINT), 0);
         lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
@@ -276,12 +300,19 @@ void ui_init(void) {
     lv_obj_set_style_bg_color(notify_cont, lv_color_hex(COL_BG), 0);
     lv_obj_set_style_bg_opa(notify_cont, LV_OPA_COVER, 0);
     lv_obj_remove_flag(notify_cont, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_remove_flag(notify_cont, LV_OBJ_FLAG_CLICKABLE); // let taps fall to scr
+    lv_obj_remove_flag(notify_cont, LV_OBJ_FLAG_CLICKABLE);
 
     notify_ring = lv_arc_create(notify_cont);
-    setup_ring(notify_ring, 452, 12, COL_TRACK);
-    lv_arc_set_value(notify_ring, 100);
+    lv_obj_set_size(notify_ring, 458, 458);
+    lv_obj_center(notify_ring);
+    lv_arc_set_bg_angles(notify_ring, 0, 360);
+    lv_arc_set_angles(notify_ring, 0, 360);
+    lv_obj_remove_flag(notify_ring, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_arc_width(notify_ring, 8, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(notify_ring, lv_color_hex(COL_FAINT2), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(notify_ring, 8, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(notify_ring, lv_color_hex(COL_ATTENTION), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(notify_ring, LV_OPA_TRANSP, LV_PART_KNOB);
 
     notify_title = lv_label_create(notify_cont);
     lv_obj_set_style_text_font(notify_title, &lv_font_montserrat_28, 0);
@@ -307,103 +338,158 @@ void ui_init(void) {
     lv_obj_align(notify_hint, LV_ALIGN_CENTER, 0, 150);
     lv_label_set_text(notify_hint, "tap to dismiss");
 
-    // repaint at 10 Hz (also drives the orb / notify breathing animation)
-    lv_timer_create(tick_cb, 100, NULL);
+    lv_timer_create(tick_cb, 80, NULL); // ~12.5 Hz; drives the spinner
+}
+
+// ------------------------------------------------------------- screenshot ----
+
+bool ui_capture_take(unsigned char **out, int *ow, int *oh) {
+    if (esp_lv_adapter_lock(-1) != ESP_OK) return false;
+    lv_draw_buf_t *snap = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_RGB565);
+    esp_lv_adapter_unlock();
+    if (!snap) return false;
+
+    int W = snap->header.w, H = snap->header.h;
+    uint32_t stride = snap->header.stride;
+    // Downsample factor for screenshots. sf=1 = full 466x466 (use the standalone
+    // dev-shot tool with a long timeout); sf=2/4 keeps the daemon's 5s op happy.
+    const int sf = 1;
+    int w2 = W / sf, h2 = H / sf;
+    unsigned char *dst = malloc((size_t)w2 * h2 * 2);
+    bool ok = false;
+    if (dst) {
+        int di = 0;
+        for (int y = 0; y < h2; y++) {
+            const uint16_t *row =
+                (const uint16_t *)((const uint8_t *)snap->data + (size_t)(y * sf) * stride);
+            for (int x = 0; x < w2; x++) {
+                uint16_t px = row[x * sf];
+                dst[di++] = (unsigned char)(px >> 8);
+                dst[di++] = (unsigned char)(px & 0xFF);
+            }
+        }
+        *out = dst;
+        *ow = w2;
+        *oh = h2;
+        ok = true;
+    }
+    lv_draw_buf_destroy(snap);
+    return ok;
 }
 
 // ------------------------------------------------------------- refresh ----
 
-static void show_group(bool arcs, bool live, bool idle, bool sess, bool notify) {
-    set_hidden(ctx_arc, !arcs);
-    set_hidden(block_arc, !arcs);
-    set_hidden(model_pill, !live);
-    set_hidden(orb, !live);
-    set_hidden(activity_lbl, !live);
-    set_hidden(metric_big, !live);
-    set_hidden(metric_sub, !live);
-    set_hidden(git_lbl, !live);
-    set_hidden(clock_lbl, !idle);
-    set_hidden(date_lbl, !idle);
-    set_hidden(idle_pill, !idle);
-    set_hidden(sess_title, !sess);
-    set_hidden(sess_cont, !sess);
-    set_hidden(notify_cont, !notify);
+static void hide_all(void) {
+    set_hidden(ring, true);
+    set_hidden(model_pill, true);
+    set_hidden(activity_lbl, true);
+    set_hidden(metric_big, true);
+    set_hidden(metric_sub, true);
+    set_hidden(git_lbl, true);
+    for (int i = 0; i < N_BARS; i++) {
+        set_hidden(bar_name[i], true);
+        set_hidden(bar_track[i], true);
+        set_hidden(bar_val[i], true);
+    }
+    set_hidden(clock_lbl, true);
+    set_hidden(date_lbl, true);
+    set_hidden(idle_pill, true);
+    set_hidden(sess_title, true);
+    set_hidden(sess_cont, true);
+    set_hidden(notify_cont, true);
+}
+
+static void set_bar(int i, bool present, int pct, const char *vtext) {
+    set_hidden(bar_name[i], false);
+    set_hidden(bar_track[i], false);
+    set_hidden(bar_val[i], false);
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    int w = present ? (BAR_W * pct) / 100 : 0;
+    lv_obj_set_width(bar_fill[i], w);
+    lv_obj_set_style_bg_color(bar_fill[i], lv_color_hex(usage_color(pct)), 0);
+    lv_label_set_text(bar_val[i], vtext);
+    lv_obj_set_style_text_color(bar_val[i], lv_color_hex(present ? COL_WHITE : COL_DIM), 0);
+}
+
+static void update_ring(activity_t a) {
+    set_hidden(ring, false);
+    uint32_t c = activity_color(a);
+    lv_obj_set_style_arc_color(ring, lv_color_hex(c), LV_PART_INDICATOR);
+    if (a == ACT_WORKING) {
+        // bright segment sweeping the bezel
+        lv_arc_set_angles(ring, 0, 64);
+        lv_arc_set_rotation(ring, s_spin);
+        lv_obj_set_style_arc_opa(ring, LV_OPA_COVER, LV_PART_INDICATOR);
+    } else if (a == ACT_ATTENTION) {
+        // full red ring, fast pulse
+        lv_arc_set_angles(ring, 0, 359);
+        lv_arc_set_rotation(ring, 0);
+        lv_obj_set_style_arc_opa(ring, (lv_opa_t)(120 + (int)(sinf(s_pulse) * 0.5f + 0.5f) * 135),
+                                 LV_PART_INDICATOR);
+    } else if (a == ACT_AWAITING) {
+        // calm full amber ring
+        lv_arc_set_angles(ring, 0, 359);
+        lv_arc_set_rotation(ring, 0);
+        lv_obj_set_style_arc_opa(ring, 150, LV_PART_INDICATOR);
+    } else {
+        lv_arc_set_angles(ring, 0, 359);
+        lv_arc_set_rotation(ring, 0);
+        lv_obj_set_style_arc_opa(ring, 70, LV_PART_INDICATOR);
+    }
 }
 
 static void refresh_live(const model_t *m) {
-    // model pill
+    set_hidden(model_pill, false);
+    set_hidden(activity_lbl, false);
+    set_hidden(metric_big, false);
+    set_hidden(metric_sub, false);
+    set_hidden(git_lbl, false);
+
     lv_label_set_text(model_lbl, m->model_short[0] ? m->model_short : "Claude");
 
-    // orb color + breathing
     uint32_t ac = activity_color(m->activity);
-    lv_obj_set_style_bg_color(orb, lv_color_hex(ac), 0);
-    lv_obj_set_style_shadow_color(orb, lv_color_hex(ac), 0);
-    float speed = 0.10f;
-    if (m->activity == ACT_WORKING) speed = 0.20f;
-    else if (m->activity == ACT_ATTENTION) speed = 0.32f;
-    s_phase += speed;
-    float s = sinf(s_phase) * 0.5f + 0.5f; // 0..1
-    lv_obj_set_style_bg_opa(orb, (lv_opa_t)(90 + (int)(s * 165)), 0);
-    lv_obj_set_style_shadow_width(orb, 14 + (int)(s * 36), 0);
-
     lv_obj_set_style_text_color(activity_lbl, lv_color_hex(ac), 0);
     lv_label_set_text(activity_lbl, activity_text(m->activity));
-
-    // context ring
-    if (m->has_ctx) {
-        int pct = m->ctx_used_pct;
-        if (pct < 0) pct = 0;
-        if (pct > 100) pct = 100;
-        lv_arc_set_value(ctx_arc, pct);
-        uint32_t cc = pct < 60 ? COL_CTX_OK : (pct < 85 ? COL_CTX_WARN : COL_CTX_HOT);
-        if (m->ctx_exceeds_200k) cc = COL_CTX_HOT;
-        lv_obj_set_style_arc_color(ctx_arc, lv_color_hex(cc), LV_PART_INDICATOR);
-    } else {
-        lv_arc_set_value(ctx_arc, 0);
-    }
-
-    // 5h block ring
-    if (m->has_block) {
-        int bp = m->block_used_pct;
-        if (bp < 0) bp = 0;
-        if (bp > 100) bp = 100;
-        lv_arc_set_value(block_arc, bp);
-        set_hidden(block_arc, false);
-    } else {
-        set_hidden(block_arc, true);
-    }
+    update_ring(m->activity);
 
     // primary metric: cost if known, else context %
     char big[24];
-    if (m->has_cost) {
-        snprintf(big, sizeof(big), "$%.2f", m->cost_session_usd);
-    } else if (m->has_ctx) {
-        snprintf(big, sizeof(big), "%d%%", m->ctx_used_pct);
-    } else {
-        big[0] = '\0';
-    }
+    if (m->has_cost) snprintf(big, sizeof(big), "$%.2f", m->cost_session_usd);
+    else if (m->has_ctx) snprintf(big, sizeof(big), "%d%%", m->ctx_used_pct);
+    else big[0] = '\0';
     lv_label_set_text(metric_big, big);
 
-    // secondary line: ctx · duration · lines
-    char sub[64];
+    // sub: duration + lines
+    char sub[48];
     sub[0] = '\0';
     size_t off = 0;
-    if (m->has_ctx)
-        off += snprintf(sub + off, sizeof(sub) - off, "ctx %d%%", m->ctx_used_pct);
     if (m->has_cost && m->cost_duration_min > 0) {
-        if (off) off += snprintf(sub + off, sizeof(sub) - off, "  ");
         if (m->cost_duration_min >= 60)
-            off += snprintf(sub + off, sizeof(sub) - off, "%.1fh",
-                            m->cost_duration_min / 60.0f);
+            off += snprintf(sub + off, sizeof(sub) - off, "%.1fh", m->cost_duration_min / 60.0f);
         else
             off += snprintf(sub + off, sizeof(sub) - off, "%dm", m->cost_duration_min);
     }
     if (m->has_cost && (m->lines_added || m->lines_removed)) {
-        if (off) off += snprintf(sub + off, sizeof(sub) - off, "  ");
-        off += snprintf(sub + off, sizeof(sub) - off, "+%d -%d", m->lines_added,
-                        m->lines_removed);
+        if (off) off += snprintf(sub + off, sizeof(sub) - off, "   ");
+        off += snprintf(sub + off, sizeof(sub) - off, "+%d -%d", m->lines_added, m->lines_removed);
     }
     lv_label_set_text(metric_sub, sub);
+
+    // usage bars: CTX, 5H, WK
+    char v[8];
+    if (m->has_ctx) {
+        snprintf(v, sizeof(v), "%d%%", m->ctx_used_pct);
+        set_bar(0, true, m->ctx_used_pct, v);
+    } else set_bar(0, false, 0, "--");
+    if (m->has_block) {
+        snprintf(v, sizeof(v), "%d%%", m->block_used_pct);
+        set_bar(1, true, m->block_used_pct, v);
+    } else set_bar(1, false, 0, "--");
+    if (m->has_weekly) {
+        snprintf(v, sizeof(v), "%d%%", m->weekly_used_pct);
+        set_bar(2, true, m->weekly_used_pct, v);
+    } else set_bar(2, false, 0, "--");
 
     // git footer
     if (m->has_git && m->git_branch[0]) {
@@ -418,6 +504,10 @@ static void refresh_live(const model_t *m) {
 }
 
 static void refresh_idle(const model_t *m) {
+    set_hidden(clock_lbl, false);
+    set_hidden(date_lbl, false);
+    set_hidden(idle_pill, false);
+
     time_t now = time(NULL);
     struct tm lt;
     localtime_r(&now, &lt);
@@ -442,6 +532,8 @@ static void refresh_idle(const model_t *m) {
 }
 
 static void refresh_sessions(const model_t *m) {
+    set_hidden(sess_title, false);
+    set_hidden(sess_cont, false);
     for (int i = 0; i < MODEL_MAX_SESSIONS; i++) {
         if (i < m->session_count) {
             const session_t *s = &m->sessions[i];
@@ -461,88 +553,27 @@ static void refresh_sessions(const model_t *m) {
 }
 
 static void refresh_notify(const model_t *m) {
+    set_hidden(notify_cont, false);
     uint32_t uc = m->notify_urgency == URG_HIGH
                       ? COL_ATTENTION
                       : (m->notify_urgency == URG_LOW ? COL_DIM : COL_AWAITING);
-    // pulsing ring opacity
-    s_phase += (m->notify_urgency == URG_HIGH) ? 0.35f : 0.18f;
-    float s = sinf(s_phase) * 0.5f + 0.5f;
-    lv_obj_set_style_arc_opa(notify_ring, (lv_opa_t)(120 + (int)(s * 135)), LV_PART_INDICATOR);
+    lv_obj_set_style_arc_opa(notify_ring, (lv_opa_t)(120 + (int)((sinf(s_pulse) * 0.5f + 0.5f) * 135)),
+                             LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(notify_ring, lv_color_hex(uc), LV_PART_INDICATOR);
     lv_label_set_text(notify_title, m->notify_title);
     lv_label_set_text(notify_body, m->notify_body);
 }
 
-#ifdef SHOT_DIAG
-// Diagnostic: synthesize a frame WITHOUT lv_snapshot to isolate whether the
-// slow path is the snapshot render or the protocol/TX. Colored quadrants so the
-// PNG also confirms RGB565 byte order (TL red, TR green, BL blue, BR white).
-bool ui_capture_take(unsigned char **out, int *ow, int *oh) {
-    const int w = 116, h = 116;
-    unsigned char *dst = heap_caps_malloc((size_t)w * h * 2, MALLOC_CAP_SPIRAM);
-    if (!dst) return false;
-    int di = 0;
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            uint16_t px;
-            if (y < h / 2 && x < w / 2) px = 0xF800;      // red
-            else if (y < h / 2) px = 0x07E0;              // green
-            else if (x < w / 2) px = 0x001F;              // blue
-            else px = 0xFFFF;                             // white
-            dst[di++] = (unsigned char)(px >> 8);
-            dst[di++] = (unsigned char)(px & 0xFF);
-        }
-    }
-    *out = dst;
-    *ow = w;
-    *oh = h;
-    return true;
-}
-#else
-bool ui_capture_take(unsigned char **out, int *ow, int *oh) {
-    if (esp_lv_adapter_lock(-1) != ESP_OK) return false;
-    lv_draw_buf_t *snap = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_RGB565);
-    esp_lv_adapter_unlock();
-    if (!snap) return false;
-
-    int W = snap->header.w, H = snap->header.h;
-    uint32_t stride = snap->header.stride; // bytes per row
-    // 4x downsample (466->116) keeps the base64 frame ~36KB so the whole ack
-    // streams over the native USB-Serial/JTAG port well within the host's 5s
-    // request timeout. Plenty of detail to verify the layout.
-    const int sf = 4;
-    int w2 = W / sf, h2 = H / sf;
-    unsigned char *dst = malloc((size_t)w2 * h2 * 2);
-    bool ok = false;
-    if (dst) {
-        int di = 0;
-        for (int y = 0; y < h2; y++) {
-            const uint16_t *row =
-                (const uint16_t *)((const uint8_t *)snap->data + (size_t)(y * sf) * stride);
-            for (int x = 0; x < w2; x++) {
-                uint16_t px = row[x * sf]; // native little-endian RGB565
-                dst[di++] = (unsigned char)(px >> 8); // big-endian for the host decoder
-                dst[di++] = (unsigned char)(px & 0xFF);
-            }
-        }
-        *out = dst;
-        *ow = w2;
-        *oh = h2;
-        ok = true;
-    }
-    lv_draw_buf_destroy(snap);
-    return ok;
-}
-#endif
-
 static void tick_cb(lv_timer_t *t) {
     (void)t;
     model_lock();
-    model_t m = g_model; // snapshot
+    model_t m = g_model;
     g_model.dirty = false;
     model_unlock();
 
-    // brightness: dim while there's no link, bright otherwise
+    s_spin = (s_spin + 11) % 360;
+    s_pulse += (m.activity == ACT_ATTENTION) ? 0.45f : 0.22f;
+
     static int last_bright = -1;
     int want = (m.link == LINK_NOLINK) ? 35 : 100;
     if (want != last_bright) {
@@ -550,7 +581,8 @@ static void tick_cb(lv_timer_t *t) {
         last_bright = want;
     }
 
-    // notify overlay wins; auto-dismiss low/normal after 8s
+    hide_all();
+
     if (m.notify_active) {
         if (m.notify_urgency != URG_HIGH &&
             (esp_timer_get_time() / 1000 - m.notify_shown_ms) > 8000) {
@@ -558,21 +590,17 @@ static void tick_cb(lv_timer_t *t) {
             g_model.notify_active = false;
             model_unlock();
         } else {
-            show_group(false, false, false, false, true);
             refresh_notify(&m);
             return;
         }
     }
 
     if (m.link == LINK_LIVE && s_page == PAGE_SESSIONS && m.session_count > 0) {
-        show_group(false, false, false, true, false);
         refresh_sessions(&m);
     } else if (m.link == LINK_LIVE) {
-        if (s_page == PAGE_SESSIONS) s_page = PAGE_LIVE; // sessions vanished
-        show_group(true, true, false, false, false);
+        if (s_page == PAGE_SESSIONS) s_page = PAGE_LIVE;
         refresh_live(&m);
     } else {
-        show_group(false, false, true, false, false);
         refresh_idle(&m);
     }
 }
