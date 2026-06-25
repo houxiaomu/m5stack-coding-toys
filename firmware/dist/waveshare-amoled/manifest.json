@@ -11,7 +11,7 @@
   "sha256": {
     "bootloader.bin": "ea496c0e740e33fc217183fae6572be4c5be62cf0efc975e89876f4fa6b183ce",
     "partitions.bin": "fd8026bff850ca0dee41c41305160317fffe604dda30a9bd5a701ac82d96fa17",
-    "firmware.bin":   "e595136b133e65abec5bc0bb2d897f9d655e328bc3b86903dfbf182fed7a4967"
+    "firmware.bin":   "b420c1c4611c7a4895566fe49cacbfb07aa8871921e99e5f18700c220ce299d4"
   },
-  "built_at": "2026-06-25T13:58:16Z"
+  "built_at": "2026-06-25T14:03:45Z"
 }

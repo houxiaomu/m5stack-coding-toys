@@ -213,7 +213,9 @@ static void apply_time(const cJSON *time) {
         char sign = west < 0 ? '-' : '+';
         long a = labs(west);
         char tz[24];
-        snprintf(tz, sizeof(tz), "M5T%c%02ld:%02ld", sign, a / 60, a % 60);
+        // POSIX TZ std-name must be letters only (a digit makes newlib's tzset
+        // reject the whole string and silently fall back to UTC).
+        snprintf(tz, sizeof(tz), "LCL%c%02ld:%02ld", sign, a / 60, a % 60);
         setenv("TZ", tz, 1);
         tzset();
     }
