@@ -42,7 +42,8 @@ Standard `m5ct` envelope `{v,k,t,p,id?}`, NDJSON framed, over the chip's native
 - replies to `hello` (→ `hello.ack` with `board/fw/caps/device_id`, applies the
   host time), `ping` (→ `pong`)
 - parses `status` into `g_model` (see `main/model.h`) for the UI
-- `notify` → overlay + `notify.ack`; `tap` → `tap.ack`
+- `notify` → overlay + `notify.ack`; `tap` → mirrors a physical screen tap
+  (dismiss the notify overlay, else flip live ⇄ sessions) + `tap.ack`
 - `screenshot` → raw **big-endian RGB565** frame, base64-streamed in the ack
   (host encodes the PNG). Full 466×466 streams in ~0.9 s (well inside the host's
   5 s timeout) thanks to chunked TX; `ui.c`'s `sf` can downsample if ever needed.

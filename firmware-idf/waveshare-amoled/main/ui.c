@@ -169,8 +169,11 @@ static lv_obj_t *make_pill(lv_obj_t *parent, uint32_t bg) {
 }
 
 // ================================================================== events ==
-static void on_scr_click(lv_event_t *e) {
-    (void)e;
+// Core screen-tap behaviour: dismiss an active notify, else flip between the
+// live dashboard and the session list. Shared by the physical touch handler
+// and the host `tap` RPC. Only touches g_model (mutexed) and s_page (an int the
+// LVGL tick reads), so it is safe to call from the protocol task.
+void ui_tap(void) {
     model_lock();
     bool notif = g_model.notify_active;
     bool multi = (g_model.link == LINK_LIVE && g_model.session_count > 1);
@@ -181,6 +184,11 @@ static void on_scr_click(lv_event_t *e) {
     model_unlock();
     if (notif) return;
     if (multi) s_page = (s_page == PAGE_LIVE) ? PAGE_SESSIONS : PAGE_LIVE;
+}
+
+static void on_scr_click(lv_event_t *e) {
+    (void)e;
+    ui_tap();
 }
 
 static void on_row_click(lv_event_t *e) {

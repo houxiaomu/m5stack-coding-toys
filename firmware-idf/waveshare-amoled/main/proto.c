@@ -379,6 +379,7 @@ static void handle_line(const char *line) {
         } else if (!strcmp(kind, "screenshot")) {
             send_screenshot(id);
         } else if (!strcmp(kind, "tap")) {
+            ui_tap();
             send_tap_ack(id, true);
         }
     }

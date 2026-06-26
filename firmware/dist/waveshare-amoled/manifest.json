@@ -8,6 +8,6 @@
     { "path": "partitions.bin", "offset": "0x8000" },
     { "path": "firmware.bin",   "offset": "0x10000" }
   ],
-  "sha256": { "bootloader.bin": "ea496c0e740e33fc217183fae6572be4c5be62cf0efc975e89876f4fa6b183ce", "partitions.bin": "fd8026bff850ca0dee41c41305160317fffe604dda30a9bd5a701ac82d96fa17", "firmware.bin": "47245c6537c3024195c93954c2d8dbcdb794c59e549b66401159e41d434eb1d3" },
-  "built_at": "2026-06-26T00:12:48Z"
+  "sha256": { "bootloader.bin": "ea496c0e740e33fc217183fae6572be4c5be62cf0efc975e89876f4fa6b183ce", "partitions.bin": "fd8026bff850ca0dee41c41305160317fffe604dda30a9bd5a701ac82d96fa17", "firmware.bin": "8911c32c8d71a06a00b522258ed04bcb7e43465ac4fe16daadf66d09122eb8e4" },
+  "built_at": "2026-06-26T00:25:34Z"
 }
