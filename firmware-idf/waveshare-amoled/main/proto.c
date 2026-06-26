@@ -278,8 +278,7 @@ static void apply_status(const cJSON *p) {
         char shortn[24];
         jstr(model, "short", shortn, sizeof(shortn));
         if (shortn[0]) {
-            strncpy(m->model_short, shortn, sizeof(m->model_short) - 1);
-            m->model_short[sizeof(m->model_short) - 1] = '\0';
+            snprintf(m->model_short, sizeof(m->model_short), "%s", shortn);
         }
     }
 

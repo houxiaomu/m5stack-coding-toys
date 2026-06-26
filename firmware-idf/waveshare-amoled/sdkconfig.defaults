@@ -21,6 +21,11 @@ CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
 CONFIG_SPIRAM_RODATA=y
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 
+# ---- Compiler: optimize for performance (-O2) ----
+# LVGL renders in software (no GPU); -O2 vs the -Og default is a large FPS win
+# for the rasterizer/blending. (ESP-FAQ's first LCD frame-rate recommendation.)
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
 # ---- Main task ----
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
@@ -62,6 +67,8 @@ CONFIG_LV_USE_ROLLER=y
 CONFIG_LV_USE_SWITCH=y
 CONFIG_LV_USE_LIST=y
 CONFIG_LV_USE_SNAPSHOT=y
+# Faster refresh ceiling (≈60Hz target) for smoother animation.
+CONFIG_LV_DEF_REFR_PERIOD=16
 
 # Larger LVGL buffer in PSRAM is handled by the BSP adapter.
 

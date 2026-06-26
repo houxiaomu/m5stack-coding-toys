@@ -25,7 +25,7 @@
 #define COL_DIM 0x64748B
 #define COL_BAR_TRACK 0x1E293B
 #define COL_RING_TRACK 0x0E1626
-#define COL_WORKING 0x22D3EE   // cyan
+#define COL_WORKING 0x4ADE80   // green
 #define COL_AWAITING 0xF59E0B  // amber
 #define COL_ATTENTION 0xEF4444 // red
 #define COL_LINKED 0x22C55E    // green
@@ -38,8 +38,18 @@
 #define RING_BOX 458       // arc bounding box, just inside the bezel
 #define RING_TRACK_W 3
 #define RING_SEG_W 7
-#define RING_SEG_DEG 64    // length of the working spinner segment
-#define RING_SPIN_STEP 11  // degrees advanced per tick
+
+// Working spinner = a small dot orbiting the rim, driven by lv_anim (smooth
+// interpolation at the display refresh rate).
+//
+// Cost note: the panel renders in 50px partial-buffer chunks on a software
+// (no-GPU) rasterizer, so per-frame cost scales with the *invalidated area*. An
+// arc on this big rim has a huge bounding box → ~10fps. Moving a small dot only
+// invalidates its old+new rects (~SPINNER_D²×2 px), a tiny constant area, so it
+// renders far faster and keeps a high, steady FPS.
+#define SPINNER_D 16       // dot diameter (px)
+#define SPINNER_MARGIN 4   // gap from the bezel/track to the dot centre
+#define SPINNER_REV_MS 2200 // time for one full revolution
 
 // Spacing scale (used for flex gaps & margins — relative, not absolute coords).
 #define GAP_TIGHT 2
@@ -51,10 +61,14 @@
 #define PILL_PAD_X 14
 #define PILL_PAD_Y 5
 
+// Fixed width for the live page's value labels (cost/activity/sub/git) so their
+// text can change without re-flowing the page. Inside the round content area.
+#define LIVE_LBL_W 380
+
 // Usage bar row: [name][track][value].
 #define BAR_TRACK_W 120
 #define BAR_H 8
-#define BAR_NAME_W 36
+#define BAR_NAME_W 76
 #define BAR_VALUE_W 48
 #define BAR_COL_GAP 10
 #define USAGE_WARN_PCT 60 // < warn → low colour
@@ -76,6 +90,8 @@
 
 // Behaviour.
 #define TICK_MS 80              // UI repaint / animation tick
+#define LONG_PRESS_MS 3000      // hold-to-pair threshold (deliberate; avoids mis-touch)
+#define SHOW_FPS 1              // diagnostic FPS readout under the git branch (set 0 to strip)
 #define NOTIFY_AUTO_MS 8000     // low/normal notify auto-dismiss
 #define BRIGHT_IDLE 35
 #define BRIGHT_ACTIVE 100
@@ -86,16 +102,31 @@
 
 #define N_BARS 3
 enum { BAR_CTX = 0, BAR_BLOCK, BAR_WEEK };
-static const char *BAR_LABELS[N_BARS] = {"CTX", "5H", "WK"};
+static const char *BAR_LABELS[N_BARS] = {"Context", "5 Hour", "Week"};
 
 typedef enum { PAGE_LIVE = 0, PAGE_SESSIONS } page_t;
+
+// Which full-screen view is currently shown. Tracked so the tick only toggles
+// page visibility on a real transition (not every tick).
+typedef enum {
+    VIEW_NONE = 0,
+    VIEW_PAIR,
+    VIEW_NOTIFY,
+    VIEW_SESSIONS,
+    VIEW_LIVE,
+    VIEW_IDLE,
+} view_t;
 
 // ============================================================ widget handles ==
 static lv_obj_t *scr;
 static lv_obj_t *ring;
+static lv_obj_t *spinner; // working spinner: a dot orbiting the rim
 // live page
 static lv_obj_t *live_page, *model_pill, *model_lbl, *activity_lbl;
 static lv_obj_t *metric_big, *metric_sub, *git_lbl;
+#if SHOW_FPS
+static lv_obj_t *fps_lbl;
+#endif
 static lv_obj_t *bar_fill[N_BARS], *bar_val[N_BARS];
 // idle page
 static lv_obj_t *idle_page, *clock_lbl, *date_lbl, *idle_pill, *idle_pill_lbl;
@@ -108,8 +139,15 @@ static lv_obj_t *notify_page, *notify_ring, *notify_title, *notify_body;
 static lv_obj_t *pair_page, *pair_code_lbl;
 
 static page_t s_page = PAGE_LIVE;
-static int s_spin = 0;
+static view_t s_view = VIEW_NONE; // currently shown view (transition tracking)
+static int s_spin = 0;       // current spinner orbit angle (driven by lv_anim)
+static int s_anim_var = 0;   // dummy var to anchor the rotation animation
+static bool s_working = false; // spinner is the active indicator this frame
 static float s_pulse = 0;
+#if SHOW_FPS
+static volatile uint32_t s_fps_frames = 0; // rendered frames since last sample
+static int s_fps = 0;                      // last measured frames/sec
+#endif
 static char s_row_id[MODEL_MAX_SESSIONS][24];
 
 static void tick_cb(lv_timer_t *t);
@@ -117,6 +155,10 @@ static void tick_cb(lv_timer_t *t);
 // ================================================================== helpers ==
 static void set_hidden(lv_obj_t *o, bool hide) {
     if (!o) return;
+    // Idempotent: if already in the requested state, do nothing. Toggling the
+    // HIDDEN flag invalidates the object's whole area, so a redundant
+    // show-when-already-shown every tick would force a full page repaint.
+    if (lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN) == hide) return;
     if (hide) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
 }
@@ -147,6 +189,16 @@ static uint32_t usage_color(int pct) {
 static void label_set(lv_obj_t *l, const lv_font_t *font, uint32_t color) {
     lv_obj_set_style_text_font(l, font, 0);
     lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+}
+
+// Pin a flex-child label to a fixed width, centered, single-line (clipped). Its
+// text can then change without resizing the label — so updates repaint only the
+// label's own area instead of re-flowing the whole page (a full-page flex
+// relayout invalidates, and re-transmits, the entire screen ≈ 90ms here).
+static void label_fixed(lv_obj_t *l, int w) {
+    lv_obj_set_width(l, w);
+    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_CLIP);
 }
 
 // A full-screen, transparent, non-scrolling flex-column page centred on screen.
@@ -219,7 +271,7 @@ static void build_ring(void) {
     lv_obj_set_size(ring, RING_BOX, RING_BOX);
     lv_obj_center(ring);
     lv_arc_set_bg_angles(ring, 0, 360);
-    lv_arc_set_angles(ring, 0, RING_SEG_DEG);
+    lv_arc_set_angles(ring, 0, 359);
     lv_obj_remove_flag(ring, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_arc_width(ring, RING_TRACK_W, LV_PART_MAIN);
     lv_obj_set_style_arc_color(ring, lv_color_hex(COL_RING_TRACK), LV_PART_MAIN);
@@ -229,6 +281,63 @@ static void build_ring(void) {
     lv_obj_set_style_bg_opa(ring, LV_OPA_TRANSP, LV_PART_KNOB);
     lv_obj_set_style_pad_all(ring, 0, LV_PART_KNOB);
 }
+
+// Build the working spinner: a small green dot that orbits the rim. A moving
+// dot invalidates only its old+new rects, so it's cheap to render (unlike an
+// arc, whose rim-spanning bounding box is huge for the software rasterizer).
+static void build_spinner(void) {
+    // A plain child of the screen: moving it invalidates (and so redraws/erases)
+    // its old + new rects. It must NOT live on lv_layer_top() — there, partial
+    // refresh fails to erase the old position and the dot smears a trail.
+    spinner = lv_obj_create(scr);
+    lv_obj_remove_style_all(spinner);
+    lv_obj_remove_flag(spinner, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(spinner, SPINNER_D, SPINNER_D);
+    lv_obj_set_style_radius(spinner, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(spinner, lv_color_hex(COL_WORKING), 0);
+    lv_obj_set_style_bg_opa(spinner, LV_OPA_COVER, 0);
+    lv_obj_add_flag(spinner, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Position the dot at `deg` around the rim (0° = 3 o'clock, clockwise).
+static void update_spinner(int deg) {
+    float rad = (float)deg * 3.14159265f / 180.0f;
+    int c = DISP_SIZE / 2;                          // screen centre
+    int r = RING_BOX / 2 - RING_SEG_W / 2 - SPINNER_MARGIN; // orbit radius
+    int x = c + (int)(r * cosf(rad)) - SPINNER_D / 2;
+    int y = c + (int)(r * sinf(rad)) - SPINNER_D / 2;
+    lv_obj_set_pos(spinner, x, y);
+}
+
+// lv_anim exec callback: advances the orbit angle at the display refresh rate
+// for a smooth sweep. Skips work unless the spinner is the active indicator.
+static void spinner_anim_cb(void *var, int32_t v) {
+    (void)var;
+    s_spin = (int)v;
+    if (s_working) update_spinner(s_spin);
+}
+
+// The CO5300 only accepts partial writes on even pixel boundaries. LVGL's
+// invalidation rects (e.g. the spinner dot at cos/sin-derived odd coords) are
+// otherwise sent unaligned, so the controller mis-places the partial write and
+// the vacated pixels are never overwritten — leaving a trail of stale dots.
+// Round every invalidated area out to an even origin and even width/height.
+static void area_rounder_cb(lv_event_t *e) {
+    lv_area_t *a = (lv_area_t *)lv_event_get_param(e);
+    if (!a) return;
+    a->x1 &= ~1;
+    a->y1 &= ~1;
+    a->x2 |= 1;
+    a->y2 |= 1;
+}
+
+#if SHOW_FPS
+// Fires once per actually-rendered frame; tick_cb samples the count each second.
+static void fps_render_ready_cb(lv_event_t *e) {
+    (void)e;
+    s_fps_frames++;
+}
+#endif
 
 // One usage-bar row inside `parent`: right-aligned name, track+fill, value.
 static void build_bar_row(lv_obj_t *parent, int i) {
@@ -282,14 +391,17 @@ static void build_live_page(void) {
 
     activity_lbl = lv_label_create(live_page);
     label_set(activity_lbl, &lv_font_montserrat_24, COL_WORKING);
+    label_fixed(activity_lbl, LIVE_LBL_W);
     lv_label_set_text(activity_lbl, "ACTIVE");
 
     metric_big = lv_label_create(live_page);
     label_set(metric_big, &lv_font_montserrat_48, COL_WHITE);
+    label_fixed(metric_big, LIVE_LBL_W);
     lv_label_set_text(metric_big, "");
 
     metric_sub = lv_label_create(live_page);
     label_set(metric_sub, &lv_font_montserrat_16, COL_DIM);
+    label_fixed(metric_sub, LIVE_LBL_W);
     lv_label_set_text(metric_sub, "");
 
     lv_obj_t *bars = lv_obj_create(live_page);
@@ -304,8 +416,21 @@ static void build_live_page(void) {
 
     git_lbl = lv_label_create(live_page);
     label_set(git_lbl, &lv_font_montserrat_16, COL_DIM);
+    label_fixed(git_lbl, LIVE_LBL_W);
     lv_obj_set_style_margin_top(git_lbl, GAP_MD, 0);
     lv_label_set_text(git_lbl, "");
+
+#if SHOW_FPS
+    fps_lbl = lv_label_create(live_page);
+    label_set(fps_lbl, &lv_font_montserrat_16, COL_DIM);
+    lv_obj_set_style_margin_top(fps_lbl, GAP_TIGHT, 0);
+    // Fixed width + centered so the text changing each sample doesn't resize the
+    // label and trigger a full-page flex relayout (which would itself repaint the
+    // whole screen and skew the very FPS we're measuring).
+    lv_obj_set_width(fps_lbl, 260);
+    lv_obj_set_style_text_align(fps_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(fps_lbl, "");
+#endif
 }
 
 static void build_idle_page(void) {
@@ -451,12 +576,41 @@ void ui_init(void) {
     lv_obj_add_event_cb(scr, on_scr_click, LV_EVENT_SHORT_CLICKED, NULL);
     lv_obj_add_event_cb(scr, on_scr_long_press, LV_EVENT_LONG_PRESSED, NULL);
 
+    // Require a deliberate hold (LONG_PRESS_MS) before LV_EVENT_LONG_PRESSED
+    // fires, so incidental touches don't toggle BLE pairing.
+    for (lv_indev_t *id = lv_indev_get_next(NULL); id; id = lv_indev_get_next(id)) {
+        if (lv_indev_get_type(id) == LV_INDEV_TYPE_POINTER) {
+            lv_indev_set_long_press_time(id, LONG_PRESS_MS);
+        }
+    }
+
+    // Even-align all partial writes for the CO5300 (prevents stale-pixel trails).
+    lv_display_add_event_cb(lv_display_get_default(), area_rounder_cb, LV_EVENT_INVALIDATE_AREA,
+                            NULL);
+
+#if SHOW_FPS
+    lv_display_add_event_cb(lv_display_get_default(), fps_render_ready_cb, LV_EVENT_RENDER_READY,
+                            NULL);
+#endif
+
     build_ring();
+    build_spinner();
     build_live_page();
     build_idle_page();
     build_sessions_page();
     build_notify_page();
     build_pair_page();
+
+    // Continuous, refresh-rate-smooth rotation of the spinner dot.
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, &s_anim_var);
+    lv_anim_set_exec_cb(&a, spinner_anim_cb);
+    lv_anim_set_values(&a, 0, 359);
+    lv_anim_set_duration(&a, SPINNER_REV_MS);
+    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_path_cb(&a, lv_anim_path_linear);
+    lv_anim_start(&a);
 
     lv_timer_create(tick_cb, TICK_MS, NULL);
 }
@@ -506,15 +660,24 @@ static void set_bar(int i, bool present, int pct, const char *vtext) {
     lv_obj_set_style_text_color(bar_val[i], lv_color_hex(present ? COL_WHITE : COL_DIM), 0);
 }
 
+static void set_spinner_hidden(bool hide) { set_hidden(spinner, hide); }
+
 static void update_ring(activity_t a) {
     set_hidden(ring, false);
     lv_obj_set_style_arc_color(ring, lv_color_hex(activity_color(a)), LV_PART_INDICATOR);
     float wave = sinf(s_pulse) * 0.5f + 0.5f; // 0..1
     if (a == ACT_WORKING) {
-        lv_arc_set_angles(ring, 0, RING_SEG_DEG); // a segment that sweeps the rim
-        lv_arc_set_rotation(ring, s_spin);
-        lv_obj_set_style_arc_opa(ring, LV_OPA_COVER, LV_PART_INDICATOR);
+        // The spinner dot (animated separately) is the indicator; keep only the dim
+        // track on `ring` underneath it.
+        s_working = true;
+        lv_arc_set_angles(ring, 0, 359);
+        lv_arc_set_rotation(ring, 0);
+        lv_obj_set_style_arc_opa(ring, LV_OPA_TRANSP, LV_PART_INDICATOR);
+        set_spinner_hidden(false);
+        update_spinner(s_spin);
     } else {
+        s_working = false;
+        set_spinner_hidden(true);
         lv_arc_set_angles(ring, 0, 359); // full ring
         lv_arc_set_rotation(ring, 0);
         lv_opa_t opa = (a == ACT_ATTENTION) ? (lv_opa_t)(PULSE_RING_BASE + (int)(wave * PULSE_RING_SPAN))
@@ -610,8 +773,7 @@ static void refresh_sessions(const model_t *m) {
     for (int i = 0; i < MODEL_MAX_SESSIONS; i++) {
         if (i < m->session_count) {
             const session_t *s = &m->sessions[i];
-            strncpy(s_row_id[i], s->id, sizeof(s_row_id[i]) - 1);
-            s_row_id[i][sizeof(s_row_id[i]) - 1] = '\0';
+            snprintf(s_row_id[i], sizeof(s_row_id[i]), "%s", s->id);
             lv_obj_set_style_bg_color(sess_dot[i], lv_color_hex(activity_color(s->activity)), 0);
             lv_label_set_text(sess_name[i], s->name[0] ? s->name : s->id);
             lv_obj_set_style_bg_opa(sess_row[i], s->selected ? LV_OPA_40 : LV_OPA_TRANSP, 0);
@@ -644,6 +806,8 @@ static void refresh_pair(const model_t *m) {
 }
 
 static void hide_all_pages(void) {
+    s_working = false; // pause spinner updates until update_ring re-arms it
+    set_spinner_hidden(true);
     set_hidden(ring, true);
     set_hidden(live_page, true);
     set_hidden(idle_page, true);
@@ -659,8 +823,29 @@ static void tick_cb(lv_timer_t *t) {
     g_model.dirty = false;
     model_unlock();
 
-    s_spin = (s_spin + RING_SPIN_STEP) % 360;
     s_pulse += (m.activity == ACT_ATTENTION) ? 0.45f : 0.22f;
+
+#if SHOW_FPS
+    {
+        static int64_t fps_last_us = 0;
+        static uint32_t fps_last_frames = 0;
+        int64_t now_us = esp_timer_get_time();
+        if (fps_last_us == 0) {
+            fps_last_us = now_us;
+            fps_last_frames = s_fps_frames;
+        } else if (now_us - fps_last_us >= 500000) {
+            uint32_t df = s_fps_frames - fps_last_frames;
+            s_fps = (int)(((uint64_t)df * 1000000ULL) / (uint64_t)(now_us - fps_last_us));
+            fps_last_frames = s_fps_frames;
+            fps_last_us = now_us;
+            if (fps_lbl) {
+                char f[16];
+                snprintf(f, sizeof(f), "%d FPS", s_fps);
+                lv_label_set_text(fps_lbl, f);
+            }
+        }
+    }
+#endif
 
     static int last_bright = -1;
     int want = (m.link == LINK_NOLINK) ? BRIGHT_IDLE : BRIGHT_ACTIVE;
@@ -669,32 +854,54 @@ static void tick_cb(lv_timer_t *t) {
         last_bright = want;
     }
 
-    hide_all_pages();
+    // Auto-dismiss a low/normal notify once its timeout elapses.
+    bool show_notify = m.notify_active;
+    if (m.notify_active && m.notify_urgency != URG_HIGH &&
+        (esp_timer_get_time() / 1000 - m.notify_shown_ms) > NOTIFY_AUTO_MS) {
+        model_lock();
+        g_model.notify_active = false;
+        model_unlock();
+        show_notify = false;
+    }
 
-    // Pairing takes over the screen while active (no host link yet anyway).
+    // Decide the target view first. Pairing takes over the screen (no host link
+    // yet anyway); then notify; then the live dashboard / session list / idle.
+    view_t target;
     if (m.ble_state == BLE_UI_PAIRING) {
-        refresh_pair(&m);
-        return;
-    }
-
-    if (m.notify_active) {
-        if (m.notify_urgency != URG_HIGH &&
-            (esp_timer_get_time() / 1000 - m.notify_shown_ms) > NOTIFY_AUTO_MS) {
-            model_lock();
-            g_model.notify_active = false;
-            model_unlock();
-        } else {
-            refresh_notify(&m);
-            return;
-        }
-    }
-
-    if (m.link == LINK_LIVE && s_page == PAGE_SESSIONS && m.session_count > 0) {
-        refresh_sessions(&m);
+        target = VIEW_PAIR;
+    } else if (show_notify) {
+        target = VIEW_NOTIFY;
+    } else if (m.link == LINK_LIVE && s_page == PAGE_SESSIONS && m.session_count > 0) {
+        target = VIEW_SESSIONS;
     } else if (m.link == LINK_LIVE) {
         if (s_page == PAGE_SESSIONS) s_page = PAGE_LIVE;
-        refresh_live(&m);
+        target = VIEW_LIVE;
     } else {
-        refresh_idle(&m);
+        target = VIEW_IDLE;
+    }
+
+    // Only hide/show pages on an actual transition.
+    bool transitioned = (target != s_view);
+    if (transitioned) {
+        hide_all_pages();
+        s_view = target;
+    }
+
+    // Steady WORKING needs no per-tick page work: the spinner dot animates on its
+    // own via lv_anim, and nothing else changes until new data arrives. Skipping
+    // refresh_live here avoids a full-page flex relayout (≈ full-screen repaint,
+    // ~90ms) every tick — the dominant FPS killer. All other views still refresh
+    // every tick (idle clock ticks, pulse states animate via s_pulse, etc.).
+    bool steady_working =
+        (target == VIEW_LIVE && m.activity == ACT_WORKING && !transitioned && !m.dirty);
+    if (!steady_working) {
+        switch (target) {
+            case VIEW_PAIR: refresh_pair(&m); break;
+            case VIEW_NOTIFY: refresh_notify(&m); break;
+            case VIEW_SESSIONS: refresh_sessions(&m); break;
+            case VIEW_LIVE: refresh_live(&m); break;
+            case VIEW_IDLE: refresh_idle(&m); break;
+            default: break;
+        }
     }
 }
