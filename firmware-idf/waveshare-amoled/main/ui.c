@@ -80,11 +80,12 @@
 #define SESS_LIST_H 300      // scroll container height
 #define SESS_LIST_TOP 84     // list y from top (below the fixed title)
 #define SESS_CARD_W 330      // card width (half-width 165 stays inside the circle)
-#define SESS_CARD_H 72       // card height (was 32 — a finger-sized tap target)
+#define SESS_CARD_H 88       // card height — large finger tap target
 #define SESS_CARD_RADIUS 20
-#define SESS_CARD_GAP 10     // vertical gap between cards
+#define SESS_LIST_PAD_V 8    // list top/bottom breathing room. Cards sit FLUSH
+                             // (no inter-card gap) so the tap zones are continuous.
 #define SESS_CARD_PAD_X 18
-#define SESS_ICON_W 32       // status-icon column width
+#define SESS_ICON_W 36       // status-icon column width
 #define SESS_CARD_COL_GAP 14
 
 // Notify overlay.
@@ -495,8 +496,8 @@ static void build_sessions_page(void) {
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(list, SESS_CARD_GAP, 0);
-    lv_obj_set_style_pad_ver(list, SESS_CARD_GAP, 0);
+    lv_obj_set_style_pad_row(list, 0, 0);                  // flush cards → continuous tap zone
+    lv_obj_set_style_pad_ver(list, SESS_LIST_PAD_V, 0);
     lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(list, LV_DIR_VER);
     lv_obj_set_scroll_snap_y(list, LV_SCROLL_SNAP_CENTER);
@@ -518,13 +519,13 @@ static void build_sessions_page(void) {
         lv_obj_add_event_cb(card, on_row_click, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
         lv_obj_t *icon = lv_label_create(card);
-        label_set(icon, &lv_font_montserrat_24, COL_LINKED);
+        label_set(icon, &lv_font_montserrat_28, COL_LINKED);
         lv_obj_set_width(icon, SESS_ICON_W);
         lv_obj_set_style_text_align(icon, LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_text(icon, "");
 
         lv_obj_t *nm = lv_label_create(card);
-        label_set(nm, &lv_font_montserrat_24, COL_WHITE);
+        label_set(nm, &lv_font_montserrat_28, COL_WHITE);
         lv_label_set_long_mode(nm, LV_LABEL_LONG_DOT);
         lv_obj_set_flex_grow(nm, 1);
         lv_label_set_text(nm, "");
@@ -815,6 +816,10 @@ static void refresh_idle(const model_t *m) {
 static void refresh_sessions(const model_t *m) {
     set_hidden(sess_page, false);
 
+    // Shared breathing phase for working sessions (s_pulse advances each tick).
+    float wave = sinf(s_pulse) * 0.5f + 0.5f; // 0..1
+    lv_opa_t pulse = (lv_opa_t)(PULSE_RING_BASE + (int)(wave * PULSE_RING_SPAN));
+
     int sel = 0; // 1-based index of the selected session (0 = none)
     for (int i = 0; i < MODEL_MAX_SESSIONS; i++) {
         if (i < m->session_count) {
@@ -823,6 +828,10 @@ static void refresh_sessions(const model_t *m) {
             lv_label_set_text(sess_icon[i], activity_symbol(s->activity));
             lv_obj_set_style_text_color(sess_icon[i],
                                         lv_color_hex(activity_color(s->activity)), 0);
+            // A working (green) session breathes — pulse the icon's opacity to
+            // signal live activity; other states stay solid.
+            lv_obj_set_style_text_opa(sess_icon[i],
+                                      s->activity == ACT_WORKING ? pulse : LV_OPA_COVER, 0);
             lv_label_set_text(sess_name[i], s->name[0] ? s->name : s->id);
             lv_obj_set_style_bg_opa(sess_row[i], s->selected ? LV_OPA_40 : LV_OPA_TRANSP, 0);
             lv_obj_set_style_text_color(sess_name[i],
