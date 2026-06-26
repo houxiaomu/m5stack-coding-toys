@@ -32,6 +32,10 @@
 #define COL_USAGE_LOW 0x38BDF8  // sky
 #define COL_USAGE_MID 0xF59E0B  // amber
 #define COL_USAGE_HIGH 0xEF4444 // red
+// Selection accent for the session picker. Sky (not green/amber/red — those are
+// reserved for activity state, incl. the per-session dots, so reusing one would
+// clash with a WORKING/AWAITING/ATTENTION dot). Sky reads as a neutral UI accent.
+#define COL_SELECT 0x38BDF8
 
 // Display geometry (466x466 round panel).
 #define DISP_SIZE 466
@@ -97,10 +101,13 @@ enum {
 
 // Sessions page — phone-style scrollable card list (round-safe centred geometry).
 #define SESS_TITLE_TOP 44    // title y from top (clears the round crown)
-#define SESS_LIST_W 350      // scroll container width (round-safe at this height)
+#define SESS_LIST_W 380      // scroll container width (transparent → its corners
+                             // may sit outside the circle; only card bgs show)
 #define SESS_LIST_H 300      // scroll container height
 #define SESS_LIST_TOP 84     // list y from top (below the fixed title)
-#define SESS_CARD_W 330      // card width (half-width 165 stays inside the circle)
+#define SESS_CARD_W 360      // card width. The selected (highlighted) card is
+                             // snap-centred where the circle is widest, so a
+                             // wider card stays well inside the round bezel.
 #define SESS_CARD_H 88       // card height — large finger tap target
 #define SESS_CARD_RADIUS 20
 #define SESS_LIST_PAD_V 8    // list top/bottom breathing room. Cards sit FLUSH
@@ -776,8 +783,13 @@ static void build_sessions_page(void) {
         lv_obj_remove_style_all(card);
         lv_obj_set_size(card, SESS_CARD_W, SESS_CARD_H);
         lv_obj_set_style_radius(card, SESS_CARD_RADIUS, 0);
-        lv_obj_set_style_bg_color(card, lv_color_hex(COL_BAR_TRACK), 0);
+        // Selected state paints a sky tint + sky border (toggled in refresh);
+        // unselected is fully transparent. Colours are fixed here, the bg opacity
+        // and border width are flipped per-frame.
+        lv_obj_set_style_bg_color(card, lv_color_hex(COL_SELECT), 0);
         lv_obj_set_style_bg_opa(card, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_color(card, lv_color_hex(COL_SELECT), 0);
+        lv_obj_set_style_border_width(card, 0, 0);
         lv_obj_set_flex_flow(card, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                               LV_FLEX_ALIGN_CENTER);
@@ -1076,7 +1088,10 @@ static void refresh_sessions(const model_t *m) {
             lv_obj_set_style_bg_opa(sess_dot[i],
                                     s->activity == ACT_WORKING ? pulse : LV_OPA_COVER, 0);
             lv_label_set_text(sess_name[i], s->name[0] ? s->name : s->id);
-            lv_obj_set_style_bg_opa(sess_row[i], s->selected ? LV_OPA_40 : LV_OPA_TRANSP, 0);
+            // Selected: sky tint fill + 3px sky border (obvious on true black);
+            // unselected: transparent, no border.
+            lv_obj_set_style_bg_opa(sess_row[i], s->selected ? LV_OPA_30 : LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_width(sess_row[i], s->selected ? 3 : 0, 0);
             lv_obj_set_style_text_color(sess_name[i],
                                         lv_color_hex(s->selected ? COL_WHITE : COL_DIM), 0);
             set_hidden(sess_row[i], false);
@@ -1196,14 +1211,18 @@ static void tick_cb(lv_timer_t *t) {
         if (target == VIEW_LIVE) banner_reset();
     }
 
-    // Steady WORKING needs no per-tick page work: the spinner dot animates on its
-    // own via lv_anim, and nothing else changes until new data arrives. Skipping
-    // refresh_live here avoids a full-page flex relayout (≈ full-screen repaint,
-    // ~90ms) every tick — the dominant FPS killer. All other views still refresh
-    // every tick (idle clock ticks, pulse states animate via s_pulse, etc.).
-    bool steady_working =
-        (target == VIEW_LIVE && m.activity == ACT_WORKING && !transitioned && !m.dirty);
-    if (!steady_working) {
+    // Steady LIVE states need no per-tick page work: WORKING's spinner dot
+    // animates on its own lv_anim, and AWAITING / linked-idle are fully static.
+    // Re-running refresh_live would re-touch the full-rim arc (angles + opacity)
+    // every tick, invalidating the whole 458px ring bounding box → a near
+    // full-screen repaint on the GPU-less rasterizer (the dominant FPS killer)
+    // with nothing actually changing on screen. Only ATTENTION genuinely animates
+    // per tick (its ring opacity pulses via s_pulse), so it still refreshes. New
+    // data (m.dirty) or a view transition always forces a refresh. The banner
+    // rotates on its own timer regardless.
+    bool steady_live =
+        (target == VIEW_LIVE && m.activity != ACT_ATTENTION && !transitioned && !m.dirty);
+    if (!steady_live) {
         switch (target) {
             case VIEW_PAIR: refresh_pair(&m); break;
             case VIEW_NOTIFY: refresh_notify(&m); break;
