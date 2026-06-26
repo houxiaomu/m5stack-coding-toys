@@ -6,12 +6,22 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": ["dist", "node_modules", "firmware/.pio"]
+    "ignore": [
+      "dist",
+      "node_modules",
+      "firmware/.pio",
+      "firmware-idf/**/build/**",
+      "firmware-idf/**/managed_components/**"
+    ]
   },
-  "organizeImports": { "enabled": true },
+  "organizeImports": {
+    "enabled": true
+  },
   "linter": {
     "enabled": true,
-    "rules": { "recommended": true }
+    "rules": {
+      "recommended": true
+    }
   },
   "formatter": {
     "enabled": true,

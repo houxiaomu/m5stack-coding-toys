@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs'
 // Standalone host-side screenshot tool for the Waveshare round-AMOLED firmware.
 // Bypasses the daemon: opens the serial port directly, does the m5ct hello
 // handshake, requests a screenshot, decodes the raw big-endian RGB565 frame to
@@ -6,7 +7,6 @@
 // Usage: node scripts/dev-shot.mjs <port> <out.png>
 import { SerialPort } from 'serialport'
 import { rgb565ToPng } from '../packages/daemon/dist/png.js'
-import { writeFileSync } from 'node:fs'
 
 const port = process.argv[2] ?? '/dev/cu.usbmodem1101'
 const out = process.argv[3] ?? '/tmp/shot.png'
@@ -17,10 +17,11 @@ const handlers = []
 
 sp.on('data', (d) => {
   buf += d.toString('latin1')
-  let nl
-  while ((nl = buf.indexOf('\n')) >= 0) {
+  let nl = buf.indexOf('\n')
+  while (nl >= 0) {
     const line = buf.slice(0, nl)
     buf = buf.slice(nl + 1)
+    nl = buf.indexOf('\n')
     if (!line.trim()) continue
     let env
     try {
@@ -61,7 +62,9 @@ sp.on('open', async () => {
       process.exit(1)
     }
     const raw = Buffer.from(p.data_b64, 'base64')
-    console.error(`ack ok w=${p.w} h=${p.h} fmt=${p.fmt} b64=${p.data_b64.length} raw=${raw.length} expected=${p.w * p.h * 2}`)
+    console.error(
+      `ack ok w=${p.w} h=${p.h} fmt=${p.fmt} b64=${p.data_b64.length} raw=${raw.length} expected=${p.w * p.h * 2}`,
+    )
     const png = rgb565ToPng(raw, p.w, p.h)
     writeFileSync(out, png)
     console.error('wrote', out, png.length, 'bytes')

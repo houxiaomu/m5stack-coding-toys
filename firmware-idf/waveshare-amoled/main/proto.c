@@ -19,11 +19,28 @@
 
 static const char *TAG = "proto";
 
-#define RX_CHUNK 256
-#define LINE_MAX 4096
-#define OUT_MAX 1024
+// Framing / buffers
+#define RX_CHUNK 256       // serial read granularity (bytes)
+#define LINE_BUF 4096      // max NDJSON line we will assemble (named to avoid POSIX LINE_MAX)
+#define B64_OUT 4096       // base64 staging buffer
+#define B64_FLUSH 1020     // flush every ~1KB (multiple of 4) so writes fit the TX ring
+#define DEVICE_ID_LEN 24
 
-static char s_device_id[24];
+// USB-Serial/JTAG driver
+#define USB_TX_BUF 8192
+#define USB_RX_BUF 2048
+#define RX_TASK_STACK 16384 // lv_snapshot (screenshot path) is stack-hungry; 6K overflows
+#define RX_TASK_PRIO 5
+
+// Timing (ms)
+#define SEND_LINE_MS 100     // per small-frame TX timeout
+#define WRITE_CHUNK_MS 1000  // per screenshot-chunk TX timeout
+#define WRITE_STALL_MS 2     // backoff between stalled writes
+#define WRITE_MAX_STALLS 200 // give up streaming after this many empty writes
+#define READ_POLL_MS 50      // RX poll interval
+#define LINK_TIMEOUT_MS 15000 // host silence → NoLink
+
+static char s_device_id[DEVICE_ID_LEN];
 static SemaphoreHandle_t s_tx_lock;
 
 // ---------------------------------------------------------------- helpers ----
@@ -41,9 +58,9 @@ static void make_device_id(void) {
 static void send_line(const char *json) {
     if (!json) return;
     xSemaphoreTake(s_tx_lock, portMAX_DELAY);
-    usb_serial_jtag_write_bytes(json, strlen(json), pdMS_TO_TICKS(100));
+    usb_serial_jtag_write_bytes(json, strlen(json), pdMS_TO_TICKS(SEND_LINE_MS));
     const char nl = '\n';
-    usb_serial_jtag_write_bytes(&nl, 1, pdMS_TO_TICKS(100));
+    usb_serial_jtag_write_bytes(&nl, 1, pdMS_TO_TICKS(SEND_LINE_MS));
     xSemaphoreGive(s_tx_lock);
 }
 
@@ -102,14 +119,14 @@ static void write_all(const char *p, size_t n) {
     size_t off = 0;
     int stall = 0;
     while (off < n) {
-        int w = usb_serial_jtag_write_bytes(p + off, n - off, pdMS_TO_TICKS(1000));
+        int w = usb_serial_jtag_write_bytes(p + off, n - off, pdMS_TO_TICKS(WRITE_CHUNK_MS));
         if (w > 0) {
             off += (size_t)w;
             stall = 0;
-        } else if (++stall > 200) {
+        } else if (++stall > WRITE_MAX_STALLS) {
             break; // host stopped reading — give up rather than hang forever
         } else {
-            vTaskDelay(pdMS_TO_TICKS(2));
+            vTaskDelay(pdMS_TO_TICKS(WRITE_STALL_MS));
         }
     }
 }
@@ -135,7 +152,7 @@ static void send_screenshot(const char *id) {
                    "\"p\":{\"ok\":true,\"w\":%d,\"h\":%d,\"fmt\":\"rgb565\",\"data_b64\":\"", w, h);
     write_all(hdr, hn);
 
-    char out[4096];
+    char out[B64_OUT];
     int oi = 0;
     for (size_t i = 0; i < n; i += 3) {
         uint32_t b0 = buf[i];
@@ -146,7 +163,7 @@ static void send_screenshot(const char *id) {
         out[oi++] = B64[(triple >> 12) & 0x3F];
         out[oi++] = (i + 1 < n) ? B64[(triple >> 6) & 0x3F] : '=';
         out[oi++] = (i + 2 < n) ? B64[triple & 0x3F] : '=';
-        if (oi >= 1020) { // keep writes small so they fit the USB-Serial/JTAG ring
+        if (oi >= B64_FLUSH) { // keep writes small so they fit the USB-Serial/JTAG ring
             write_all(out, oi);
             oi = 0;
         }
@@ -372,12 +389,12 @@ static void handle_line(const char *line) {
 
 static void rx_task(void *arg) {
     (void)arg;
-    static char line[LINE_MAX];
+    static char line[LINE_BUF];
     size_t len = 0;
     uint8_t chunk[RX_CHUNK];
 
     for (;;) {
-        int n = usb_serial_jtag_read_bytes(chunk, sizeof(chunk), pdMS_TO_TICKS(50));
+        int n = usb_serial_jtag_read_bytes(chunk, sizeof(chunk), pdMS_TO_TICKS(READ_POLL_MS));
         for (int i = 0; i < n; i++) {
             char c = (char)chunk[i];
             if (c == '\n') {
@@ -385,7 +402,7 @@ static void rx_task(void *arg) {
                 if (len > 0) handle_line(line);
                 len = 0;
             } else if (c != '\r') {
-                if (len < LINE_MAX - 1) {
+                if (len < LINE_BUF - 1) {
                     line[len++] = c;
                 } else {
                     len = 0; // overflow — drop the runaway frame
@@ -395,7 +412,7 @@ static void rx_task(void *arg) {
 
         // Local NoLink detection: 15s of host silence drops us to the idle face.
         model_lock();
-        if (g_model.link != LINK_NOLINK && now_ms() - g_model.last_rx_ms > 15000) {
+        if (g_model.link != LINK_NOLINK && now_ms() - g_model.last_rx_ms > LINK_TIMEOUT_MS) {
             g_model.link = LINK_NOLINK;
             g_model.activity = ACT_NONE;
             g_model.session_count = 0;
@@ -411,10 +428,10 @@ void proto_start(void) {
     ESP_LOGI(TAG, "device_id=%s board=%s fw=%s", s_device_id, FW_BOARD, FW_VERSION);
 
     usb_serial_jtag_driver_config_t cfg = {
-        .tx_buffer_size = 8192,
-        .rx_buffer_size = 2048,
+        .tx_buffer_size = USB_TX_BUF,
+        .rx_buffer_size = USB_RX_BUF,
     };
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&cfg));
 
-    xTaskCreate(rx_task, "proto_rx", 16384, NULL, 5, NULL);
+    xTaskCreate(rx_task, "proto_rx", RX_TASK_STACK, NULL, RX_TASK_PRIO, NULL);
 }
