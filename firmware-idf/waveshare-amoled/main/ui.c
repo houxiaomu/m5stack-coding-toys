@@ -156,6 +156,8 @@ static lv_obj_t *make_page(int gap) {
     lv_obj_set_size(p, DISP_SIZE, DISP_SIZE);
     lv_obj_center(p);
     lv_obj_remove_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    // Transparent to touch so taps/long-presses fall through to the screen.
+    lv_obj_remove_flag(p, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(p, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(p, gap, 0);
@@ -165,6 +167,7 @@ static lv_obj_t *make_page(int gap) {
 static lv_obj_t *make_pill(lv_obj_t *parent, uint32_t bg) {
     lv_obj_t *p = lv_obj_create(parent);
     lv_obj_remove_style_all(p);
+    lv_obj_remove_flag(p, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(p, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_radius(p, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(p, lv_color_hex(bg), 0);
@@ -231,6 +234,7 @@ static void build_ring(void) {
 static void build_bar_row(lv_obj_t *parent, int i) {
     lv_obj_t *row = lv_obj_create(parent);
     lv_obj_remove_style_all(row);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -244,6 +248,7 @@ static void build_bar_row(lv_obj_t *parent, int i) {
 
     lv_obj_t *track = lv_obj_create(row);
     lv_obj_remove_style_all(track);
+    lv_obj_remove_flag(track, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(track, BAR_TRACK_W, BAR_H);
     lv_obj_set_style_radius(track, BAR_H / 2, 0);
     lv_obj_set_style_bg_color(track, lv_color_hex(COL_BAR_TRACK), 0);
@@ -251,6 +256,7 @@ static void build_bar_row(lv_obj_t *parent, int i) {
 
     lv_obj_t *fill = lv_obj_create(track);
     lv_obj_remove_style_all(fill);
+    lv_obj_remove_flag(fill, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(fill, 0, BAR_H);
     lv_obj_align(fill, LV_ALIGN_LEFT_MID, 0, 0);
     lv_obj_set_style_radius(fill, BAR_H / 2, 0);
@@ -288,6 +294,7 @@ static void build_live_page(void) {
 
     lv_obj_t *bars = lv_obj_create(live_page);
     lv_obj_remove_style_all(bars);
+    lv_obj_remove_flag(bars, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(bars, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(bars, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(bars, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER);
@@ -384,6 +391,7 @@ static void build_notify_page(void) {
     // centred text column
     lv_obj_t *col = lv_obj_create(notify_page);
     lv_obj_remove_style_all(col);
+    lv_obj_remove_flag(col, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(col, NOTIFY_TEXT_W, DISP_SIZE);
     lv_obj_center(col);
     lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
@@ -439,7 +447,8 @@ void ui_init(void) {
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(scr, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(scr, on_scr_click, LV_EVENT_CLICKED, NULL);
+    // SHORT_CLICKED (not CLICKED) so a long-press release doesn't also tap.
+    lv_obj_add_event_cb(scr, on_scr_click, LV_EVENT_SHORT_CLICKED, NULL);
     lv_obj_add_event_cb(scr, on_scr_long_press, LV_EVENT_LONG_PRESSED, NULL);
 
     build_ring();
