@@ -85,8 +85,8 @@
 #define SESS_LIST_PAD_V 8    // list top/bottom breathing room. Cards sit FLUSH
                              // (no inter-card gap) so the tap zones are continuous.
 #define SESS_CARD_PAD_X 18
-#define SESS_ICON_W 36       // status-icon column width
 #define SESS_CARD_COL_GAP 14
+#define SESS_DOT_D 24        // activity dot diameter
 
 // Notify overlay.
 #define NOTIFY_RING_W 8
@@ -139,7 +139,7 @@ static lv_obj_t *bar_fill[N_BARS], *bar_val[N_BARS];
 static lv_obj_t *idle_page, *clock_lbl, *date_lbl, *idle_pill, *idle_pill_lbl;
 // sessions page
 static lv_obj_t *sess_page, *sess_title, *sess_row[MODEL_MAX_SESSIONS],
-    *sess_icon[MODEL_MAX_SESSIONS], *sess_name[MODEL_MAX_SESSIONS];
+    *sess_dot[MODEL_MAX_SESSIONS], *sess_name[MODEL_MAX_SESSIONS];
 // notify page
 static lv_obj_t *notify_page, *notify_ring, *notify_title, *notify_body;
 // pairing page
@@ -185,17 +185,6 @@ static const char *activity_text(activity_t a) {
         case ACT_AWAITING: return "AWAITING INPUT";
         case ACT_ATTENTION: return "NEEDS ATTENTION";
         default: return "ACTIVE";
-    }
-}
-
-// Session-card status glyph — colour (activity_color) + icon double-encode the
-// three states so they read at a glance without relying on colour alone.
-static const char *activity_symbol(activity_t a) {
-    switch (a) {
-        case ACT_WORKING: return LV_SYMBOL_REFRESH;   // green — running
-        case ACT_AWAITING: return LV_SYMBOL_PLAY;     // amber — your turn
-        case ACT_ATTENTION: return LV_SYMBOL_WARNING; // red — needs you
-        default: return LV_SYMBOL_OK;
     }
 }
 
@@ -278,9 +267,14 @@ static void on_scr_long_press(lv_event_t *e) {
 
 static void on_row_click(lv_event_t *e) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
-    if (idx >= 0 && idx < MODEL_MAX_SESSIONS && s_row_id[idx][0]) {
-        proto_send_focus(s_row_id[idx]);
-    }
+    if (idx < 0 || idx >= MODEL_MAX_SESSIONS || !s_row_id[idx][0]) return;
+    // Two-stage tap: first tap focuses the session (host marks it selected); a
+    // second tap on the already-selected session opens its Live page.
+    model_lock();
+    bool already = (idx < g_model.session_count && g_model.sessions[idx].selected);
+    model_unlock();
+    if (already) s_page = PAGE_LIVE;
+    else proto_send_focus(s_row_id[idx]);
 }
 
 // =================================================================== build ==
@@ -518,11 +512,15 @@ static void build_sessions_page(void) {
         lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(card, on_row_click, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
-        lv_obj_t *icon = lv_label_create(card);
-        label_set(icon, &lv_font_montserrat_28, COL_LINKED);
-        lv_obj_set_width(icon, SESS_ICON_W);
-        lv_obj_set_style_text_align(icon, LV_TEXT_ALIGN_CENTER, 0);
-        lv_label_set_text(icon, "");
+        // Activity dot: a solid colour disc (green/amber/red). The working one
+        // breathes (opacity pulse); others stay solid.
+        lv_obj_t *dot = lv_obj_create(card);
+        lv_obj_remove_style_all(dot);
+        lv_obj_remove_flag(dot, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_size(dot, SESS_DOT_D, SESS_DOT_D);
+        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(dot, lv_color_hex(COL_LINKED), 0);
+        lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
 
         lv_obj_t *nm = lv_label_create(card);
         label_set(nm, &lv_font_montserrat_28, COL_WHITE);
@@ -531,7 +529,7 @@ static void build_sessions_page(void) {
         lv_label_set_text(nm, "");
 
         sess_row[i] = card;
-        sess_icon[i] = icon;
+        sess_dot[i] = dot;
         sess_name[i] = nm;
     }
 }
@@ -825,13 +823,11 @@ static void refresh_sessions(const model_t *m) {
         if (i < m->session_count) {
             const session_t *s = &m->sessions[i];
             snprintf(s_row_id[i], sizeof(s_row_id[i]), "%s", s->id);
-            lv_label_set_text(sess_icon[i], activity_symbol(s->activity));
-            lv_obj_set_style_text_color(sess_icon[i],
-                                        lv_color_hex(activity_color(s->activity)), 0);
-            // A working (green) session breathes — pulse the icon's opacity to
-            // signal live activity; other states stay solid.
-            lv_obj_set_style_text_opa(sess_icon[i],
-                                      s->activity == ACT_WORKING ? pulse : LV_OPA_COVER, 0);
+            lv_obj_set_style_bg_color(sess_dot[i],
+                                      lv_color_hex(activity_color(s->activity)), 0);
+            // Working breathes (opacity pulse); other states stay solid.
+            lv_obj_set_style_bg_opa(sess_dot[i],
+                                    s->activity == ACT_WORKING ? pulse : LV_OPA_COVER, 0);
             lv_label_set_text(sess_name[i], s->name[0] ? s->name : s->id);
             lv_obj_set_style_bg_opa(sess_row[i], s->selected ? LV_OPA_40 : LV_OPA_TRANSP, 0);
             lv_obj_set_style_text_color(sess_name[i],
