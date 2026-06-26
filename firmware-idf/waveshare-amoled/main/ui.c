@@ -74,12 +74,18 @@
 #define USAGE_WARN_PCT 60 // < warn → low colour
 #define USAGE_HOT_PCT 85  // ≥ hot → high colour
 
-// Sessions page rows.
-#define SESS_ROW_W 280
-#define SESS_ROW_H 32
-#define SESS_DOT 12
-#define SESS_NAME_W 210
-#define SESS_RADIUS 16
+// Sessions page — phone-style scrollable card list (round-safe centred geometry).
+#define SESS_TITLE_TOP 44    // title y from top (clears the round crown)
+#define SESS_LIST_W 350      // scroll container width (round-safe at this height)
+#define SESS_LIST_H 300      // scroll container height
+#define SESS_LIST_TOP 84     // list y from top (below the fixed title)
+#define SESS_CARD_W 330      // card width (half-width 165 stays inside the circle)
+#define SESS_CARD_H 72       // card height (was 32 — a finger-sized tap target)
+#define SESS_CARD_RADIUS 20
+#define SESS_CARD_GAP 10     // vertical gap between cards
+#define SESS_CARD_PAD_X 18
+#define SESS_ICON_W 32       // status-icon column width
+#define SESS_CARD_COL_GAP 14
 
 // Notify overlay.
 #define NOTIFY_RING_W 8
@@ -131,8 +137,8 @@ static lv_obj_t *bar_fill[N_BARS], *bar_val[N_BARS];
 // idle page
 static lv_obj_t *idle_page, *clock_lbl, *date_lbl, *idle_pill, *idle_pill_lbl;
 // sessions page
-static lv_obj_t *sess_page, *sess_row[MODEL_MAX_SESSIONS], *sess_dot[MODEL_MAX_SESSIONS],
-    *sess_name[MODEL_MAX_SESSIONS];
+static lv_obj_t *sess_page, *sess_title, *sess_row[MODEL_MAX_SESSIONS],
+    *sess_icon[MODEL_MAX_SESSIONS], *sess_name[MODEL_MAX_SESSIONS];
 // notify page
 static lv_obj_t *notify_page, *notify_ring, *notify_title, *notify_body;
 // pairing page
@@ -178,6 +184,17 @@ static const char *activity_text(activity_t a) {
         case ACT_AWAITING: return "AWAITING INPUT";
         case ACT_ATTENTION: return "NEEDS ATTENTION";
         default: return "ACTIVE";
+    }
+}
+
+// Session-card status glyph — colour (activity_color) + icon double-encode the
+// three states so they read at a glance without relying on colour alone.
+static const char *activity_symbol(activity_t a) {
+    switch (a) {
+        case ACT_WORKING: return LV_SYMBOL_REFRESH;   // green — running
+        case ACT_AWAITING: return LV_SYMBOL_PLAY;     // amber — your turn
+        case ACT_ATTENTION: return LV_SYMBOL_WARNING; // red — needs you
+        default: return LV_SYMBOL_OK;
     }
 }
 
@@ -451,42 +468,69 @@ static void build_idle_page(void) {
 }
 
 static void build_sessions_page(void) {
-    sess_page = make_page(GAP_SM);
+    // Full-screen, touch-transparent container: taps on empty area fall through
+    // to scr → ui_tap() returns to Live; long-press → BLE pairing. NOT
+    // flex-centered — the title is pinned at top, the scrollable list below it.
+    sess_page = lv_obj_create(scr);
+    lv_obj_remove_style_all(sess_page);
+    lv_obj_set_size(sess_page, DISP_SIZE, DISP_SIZE);
+    lv_obj_center(sess_page);
+    lv_obj_remove_flag(sess_page, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(sess_page, LV_OBJ_FLAG_CLICKABLE);
 
-    lv_obj_t *title = lv_label_create(sess_page);
-    label_set(title, &lv_font_montserrat_20, COL_DIM);
-    lv_obj_set_style_margin_bottom(title, GAP_SM, 0);
-    lv_label_set_text(title, "SESSIONS");
+    sess_title = lv_label_create(sess_page);
+    label_set(sess_title, &lv_font_montserrat_20, COL_DIM);
+    lv_obj_set_width(sess_title, SESS_LIST_W);
+    lv_obj_set_style_text_align(sess_title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(sess_title, LV_ALIGN_TOP_MID, 0, SESS_TITLE_TOP);
+    lv_label_set_text(sess_title, "SESSIONS");
+
+    // Phone-style vertical scroll with centre snap + auto scrollbar. SCROLLABLE
+    // but NOT clickable: drag = scroll, a tap on empty list area falls through to
+    // scr (returns to Live); only the cards are clickable (focus a session).
+    lv_obj_t *list = lv_obj_create(sess_page);
+    lv_obj_remove_style_all(list);
+    lv_obj_set_size(list, SESS_LIST_W, SESS_LIST_H);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, SESS_LIST_TOP);
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(list, SESS_CARD_GAP, 0);
+    lv_obj_set_style_pad_ver(list, SESS_CARD_GAP, 0);
+    lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    lv_obj_set_scroll_snap_y(list, LV_SCROLL_SNAP_CENTER);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
 
     for (int i = 0; i < MODEL_MAX_SESSIONS; i++) {
-        lv_obj_t *row = lv_obj_create(sess_page);
-        lv_obj_remove_style_all(row);
-        lv_obj_set_size(row, SESS_ROW_W, SESS_ROW_H);
-        lv_obj_set_style_radius(row, SESS_RADIUS, 0);
-        lv_obj_set_style_bg_color(row, lv_color_hex(COL_BAR_TRACK), 0);
-        lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
-        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_hor(row, PILL_PAD_X, 0);
-        lv_obj_set_style_pad_column(row, BAR_COL_GAP, 0);
-        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(row, on_row_click, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        lv_obj_t *card = lv_obj_create(list);
+        lv_obj_remove_style_all(card);
+        lv_obj_set_size(card, SESS_CARD_W, SESS_CARD_H);
+        lv_obj_set_style_radius(card, SESS_CARD_RADIUS, 0);
+        lv_obj_set_style_bg_color(card, lv_color_hex(COL_BAR_TRACK), 0);
+        lv_obj_set_style_bg_opa(card, LV_OPA_TRANSP, 0);
+        lv_obj_set_flex_flow(card, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                              LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_hor(card, SESS_CARD_PAD_X, 0);
+        lv_obj_set_style_pad_column(card, SESS_CARD_COL_GAP, 0);
+        lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(card, on_row_click, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
-        lv_obj_t *dot = lv_obj_create(row);
-        lv_obj_remove_style_all(dot);
-        lv_obj_set_size(dot, SESS_DOT, SESS_DOT);
-        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_color(dot, lv_color_hex(COL_LINKED), 0);
-        lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+        lv_obj_t *icon = lv_label_create(card);
+        label_set(icon, &lv_font_montserrat_24, COL_LINKED);
+        lv_obj_set_width(icon, SESS_ICON_W);
+        lv_obj_set_style_text_align(icon, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_text(icon, "");
 
-        lv_obj_t *nm = lv_label_create(row);
-        label_set(nm, &lv_font_montserrat_16, COL_WHITE);
+        lv_obj_t *nm = lv_label_create(card);
+        label_set(nm, &lv_font_montserrat_24, COL_WHITE);
         lv_label_set_long_mode(nm, LV_LABEL_LONG_DOT);
-        lv_obj_set_width(nm, SESS_NAME_W);
+        lv_obj_set_flex_grow(nm, 1);
         lv_label_set_text(nm, "");
 
-        sess_row[i] = row;
-        sess_dot[i] = dot;
+        sess_row[i] = card;
+        sess_icon[i] = icon;
         sess_name[i] = nm;
     }
 }
@@ -770,21 +814,31 @@ static void refresh_idle(const model_t *m) {
 
 static void refresh_sessions(const model_t *m) {
     set_hidden(sess_page, false);
+
+    int sel = 0; // 1-based index of the selected session (0 = none)
     for (int i = 0; i < MODEL_MAX_SESSIONS; i++) {
         if (i < m->session_count) {
             const session_t *s = &m->sessions[i];
             snprintf(s_row_id[i], sizeof(s_row_id[i]), "%s", s->id);
-            lv_obj_set_style_bg_color(sess_dot[i], lv_color_hex(activity_color(s->activity)), 0);
+            lv_label_set_text(sess_icon[i], activity_symbol(s->activity));
+            lv_obj_set_style_text_color(sess_icon[i],
+                                        lv_color_hex(activity_color(s->activity)), 0);
             lv_label_set_text(sess_name[i], s->name[0] ? s->name : s->id);
             lv_obj_set_style_bg_opa(sess_row[i], s->selected ? LV_OPA_40 : LV_OPA_TRANSP, 0);
             lv_obj_set_style_text_color(sess_name[i],
                                         lv_color_hex(s->selected ? COL_WHITE : COL_DIM), 0);
             set_hidden(sess_row[i], false);
+            if (s->selected) sel = i + 1;
         } else {
             s_row_id[i][0] = '\0';
             set_hidden(sess_row[i], true);
         }
     }
+
+    char t[32];
+    if (sel > 0) snprintf(t, sizeof(t), "SESSIONS  %d/%d", sel, m->session_count);
+    else snprintf(t, sizeof(t), "SESSIONS  %d", m->session_count);
+    lv_label_set_text(sess_title, t);
 }
 
 static void refresh_notify(const model_t *m) {
