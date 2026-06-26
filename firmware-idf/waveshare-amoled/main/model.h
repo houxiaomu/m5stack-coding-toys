@@ -96,6 +96,11 @@ typedef struct {
     int session_count;
     session_t sessions[MODEL_MAX_SESSIONS];
 
+    // battery (AXP2101 PMIC, read on-device — independent of the host link)
+    bool has_battery;   // a battery is present and the gauge reads valid
+    int batt_pct;       // 0..100 state-of-charge
+    bool batt_charging; // true while charging from VBUS
+
     // BLE transport state (for the pairing screen + a link glyph)
     ble_ui_state_t ble_state;
     char pair_code[7];

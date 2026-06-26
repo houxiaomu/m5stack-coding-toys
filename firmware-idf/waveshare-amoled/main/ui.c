@@ -115,6 +115,7 @@ enum {
 #define SESS_CARD_PAD_X 18
 #define SESS_CARD_COL_GAP 14
 #define SESS_DOT_D 24        // activity dot diameter
+#define SESS_BATT_BOTTOM 30  // battery label inset from the bottom (round-safe)
 
 // Notify overlay.
 #define NOTIFY_RING_W 8
@@ -168,7 +169,7 @@ static lv_obj_t *banner, *bcard[2], *blabel[2], *bhero[2], *bsub[2];
 static lv_obj_t *idle_page, *clock_lbl, *date_lbl, *idle_pill, *idle_pill_lbl;
 // sessions page
 static lv_obj_t *sess_page, *sess_title, *sess_row[MODEL_MAX_SESSIONS],
-    *sess_dot[MODEL_MAX_SESSIONS], *sess_name[MODEL_MAX_SESSIONS];
+    *sess_dot[MODEL_MAX_SESSIONS], *sess_name[MODEL_MAX_SESSIONS], *sess_batt;
 // notify page
 static lv_obj_t *notify_page, *notify_ring, *notify_title, *notify_body;
 // pairing page
@@ -820,6 +821,14 @@ static void build_sessions_page(void) {
         sess_dot[i] = dot;
         sess_name[i] = nm;
     }
+
+    // Battery readout pinned to the bottom of the page (below the scroll list,
+    // outside it so it never scrolls). Sits inside the circle's lower chord.
+    sess_batt = lv_label_create(sess_page);
+    label_set(sess_batt, &lv_font_montserrat_20, COL_DIM);
+    lv_obj_set_style_text_align(sess_batt, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(sess_batt, LV_ALIGN_BOTTOM_MID, 0, -SESS_BATT_BOTTOM);
+    lv_label_set_text(sess_batt, "");
 }
 
 static void build_notify_page(void) {
@@ -1072,6 +1081,33 @@ static void refresh_idle(const model_t *m) {
     }
 }
 
+// Bottom-of-page battery readout: level glyph + percentage, a charge bolt while
+// charging. Colour steps green → amber → red as it drains (sky while charging).
+// Blank when no battery/gauge so nothing shows on USB-only setups.
+static void fill_battery_label(const model_t *m) {
+    if (!m->has_battery) {
+        lv_label_set_text(sess_batt, "");
+        return;
+    }
+    int pct = m->batt_pct;
+    const char *icon = pct >= 90   ? LV_SYMBOL_BATTERY_FULL
+                       : pct >= 70 ? LV_SYMBOL_BATTERY_3
+                       : pct >= 40 ? LV_SYMBOL_BATTERY_2
+                       : pct >= 15 ? LV_SYMBOL_BATTERY_1
+                                   : LV_SYMBOL_BATTERY_EMPTY;
+    uint32_t col = m->batt_charging ? COL_SELECT
+                   : pct >= 50      ? COL_WORKING
+                   : pct >= 20      ? COL_AWAITING
+                                    : COL_ATTENTION;
+    char buf[32];
+    if (m->batt_charging)
+        snprintf(buf, sizeof(buf), "%s " LV_SYMBOL_CHARGE " %d%%", icon, pct);
+    else
+        snprintf(buf, sizeof(buf), "%s %d%%", icon, pct);
+    lv_obj_set_style_text_color(sess_batt, lv_color_hex(col), 0);
+    lv_label_set_text(sess_batt, buf);
+}
+
 static void refresh_sessions(const model_t *m) {
     set_hidden(sess_page, false);
 
@@ -1108,6 +1144,8 @@ static void refresh_sessions(const model_t *m) {
     if (sel > 0) snprintf(t, sizeof(t), "SESSIONS  %d/%d", sel, m->session_count);
     else snprintf(t, sizeof(t), "SESSIONS  %d", m->session_count);
     lv_label_set_text(sess_title, t);
+
+    fill_battery_label(m);
 }
 
 static void refresh_notify(const model_t *m) {

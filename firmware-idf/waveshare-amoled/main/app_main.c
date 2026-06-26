@@ -7,12 +7,15 @@
 #include "nvs_flash.h"
 #include "esp_log.h"
 
+#include "esp_timer.h"
+
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
 #include "bsp/touch.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lv_adapter.h"
 
+#include "battery.h"
 #include "model.h"
 #include "proto.h"
 #include "ui.h"
@@ -66,6 +69,23 @@ static lv_display_t *display_start(void) {
     return disp;
 }
 
+// Poll the PMIC and publish into the shared model. Runs off an esp_timer, so
+// no I2C happens on the LVGL task. Cheap enough to run every few seconds.
+static void battery_poll(void *arg) {
+    (void)arg;
+    int pct = 0;
+    bool charging = false;
+    bool ok = battery_read(&pct, &charging);
+    model_lock();
+    bool changed = g_model.has_battery != ok || g_model.batt_pct != pct ||
+                   g_model.batt_charging != charging;
+    g_model.has_battery = ok;
+    g_model.batt_pct = pct;
+    g_model.batt_charging = charging;
+    if (changed) g_model.dirty = true;
+    model_unlock();
+}
+
 void app_main(void) {
     ESP_LOGI(TAG, "Waveshare round-AMOLED Claude statusbar starting");
 
@@ -78,6 +98,8 @@ void app_main(void) {
     model_init();
 
     ESP_ERROR_CHECK(bsp_i2c_init());
+    battery_init(bsp_i2c_get_handle());
+
     display_start();
 
     if (esp_lv_adapter_lock(-1) == ESP_OK) {
@@ -86,6 +108,12 @@ void app_main(void) {
     }
 
     proto_start();
+
+    battery_poll(NULL); // seed before the first paint
+    const esp_timer_create_args_t bt_args = {.callback = battery_poll, .name = "batt"};
+    esp_timer_handle_t bt;
+    if (esp_timer_create(&bt_args, &bt) == ESP_OK)
+        esp_timer_start_periodic(bt, 5 * 1000 * 1000); // 5 s
 
     ESP_LOGI(TAG, "init complete");
 }

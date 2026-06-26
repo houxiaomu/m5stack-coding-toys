@@ -7,7 +7,7 @@
 
 // Firmware identity reported in hello.ack and the manifest.
 #define FW_BOARD "waveshare-amoled"
-#define FW_VERSION "1.0.0"
+#define FW_VERSION "1.1.0"
 
 // Start the USB-Serial/JTAG driver and the protocol RX task.
 void proto_start(void);
