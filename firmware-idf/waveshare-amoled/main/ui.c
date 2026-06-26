@@ -461,7 +461,9 @@ static void fill_banner_card(int slot, int id, const model_t *m) {
             const char *proj = m->git_repo[0] ? m->git_repo : (m->ws_name[0] ? m->ws_name : NULL);
             if (proj) {
                 snprintf(h, sizeof(h), "%s", proj);
-                snprintf(s, sizeof(s), "%s", m->git_branch);
+                // No branch means the dir isn't a git repo — say so instead of
+                // leaving the sub line blank.
+                snprintf(s, sizeof(s), "%s", m->git_branch[0] ? m->git_branch : "no git");
             } else {
                 snprintf(h, sizeof(h), "%s", m->git_branch[0] ? m->git_branch : "--");
                 int n = git_file_count(m);
@@ -529,7 +531,7 @@ static void fill_banner_card(int slot, int id, const model_t *m) {
 // Whether a card has data to show this frame (gate from the spec).
 static bool banner_card_avail(int id, const model_t *m) {
     switch (id) {
-        case BANNER_GIT: return m->has_git && (m->git_repo[0] || m->git_branch[0]);
+        case BANNER_GIT: return m->git_repo[0] || m->git_branch[0] || m->ws_name[0];
         case BANNER_DIFF: return m->has_git && m->git_diff_files > 0;
         case BANNER_MODEL: return m->model_short[0] || m->has_ctx;
         case BANNER_COST: return m->has_cost;

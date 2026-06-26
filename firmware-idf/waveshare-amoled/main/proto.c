@@ -353,6 +353,10 @@ static void apply_status(const cJSON *p) {
         }
     } else {
         m->has_git = false;
+        // Clear repo/branch too, else a switch from a git dir to a non-git dir
+        // would leave the previous project's name showing on the REPO card.
+        m->git_repo[0] = '\0';
+        m->git_branch[0] = '\0';
         m->git_diff_files = m->git_diff_added = m->git_diff_removed = 0;
     }
 
