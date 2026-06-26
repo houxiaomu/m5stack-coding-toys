@@ -80,6 +80,35 @@ installed (already declared in the daemon + CLI packages).
   BLE throughput), past the host's 5 s screenshot timeout — screenshots are a USB
   feature in practice. The status/notify/tap path is small and snappy over BLE.
 
+### Pairing / host-side gotchas (don't regress)
+
+- **`@abandonware/noble` must actually be installed.** It's an optional dep of the
+  daemon + CLI; if missing, `createNobleCentral()` throws, is caught, and host BLE
+  is *silently* disabled (`bleCentral = null`, no error in `m5ct status`). It only
+  resolves from `packages/{daemon,cli}/node_modules`, so ad-hoc BLE scripts must
+  run from inside `packages/daemon`.
+- **`m5ct pair` needs a real TTY.** `confirmDevice` returns `false` when stdin
+  isn't a TTY, so `echo y | m5ct pair` *cancels* rather than confirms. Drive it
+  under a pseudo-tty (e.g. Python `pty.fork`) if scripting it.
+- **Any BLE connect exits pairing mode.** A pair attempt that connects then aborts
+  (or a stray central) drops the device out of `-PAIR`, so you must long-press to
+  re-enter before retrying `m5ct pair`.
+- **Serial outranks BLE whenever the USB port enumerates** — even if the port
+  can't be opened ("Cannot lock port"), the serial candidate (prio 100) keeps
+  winning over BLE (50) and the daemon never tries BLE. Testing same-machine
+  daemon-over-BLE therefore requires the USB cable physically out (and the board
+  on other power). The BLE *stack* can be verified with the device USB-powered by
+  connecting from a separate BLE central.
+
+### Touch gotcha (don't regress)
+
+- **Full-screen pages must be touch-transparent.** The page/pill/bar/notify
+  containers are `lv_obj_create`'d (clickable by default) and cover `scr`, so they
+  swallow every press and the screen-level tap/long-press handlers never fire.
+  They `remove_flag(LV_OBJ_FLAG_CLICKABLE)` so touch falls through to `scr` (only
+  session rows stay clickable). NB: the `m5ct tap` RPC calls `ui_tap()` directly
+  and bypasses touch entirely — it is **not** a test of the touch path.
+
 ## Build & flash
 
 ```bash
