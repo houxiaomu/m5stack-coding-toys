@@ -74,6 +74,27 @@
 #define USAGE_WARN_PCT 60 // < warn → low colour
 #define USAGE_HOT_PCT 85  // ≥ hot → high colour
 
+// Banner = a fixed-size info area between the activity label and the usage bars
+// that auto-rotates through a few info "cards". CRITICAL: it has a FIXED size, so
+// its content/transition only invalidates its own rect — it never triggers a
+// live_page flex relayout (which would full-screen repaint and starve the working
+// spinner's FPS). Two cards ping-pong; the off-screen one rolls in from below.
+#define BANNER_W 380
+#define BANNER_H 110
+#define BANNER_DWELL_MS 3500 // time each card is shown before rolling to the next
+#define BANNER_ANIM_MS 350   // odometer roll duration
+#define BANNER_TICK_MS 200   // banner's own driver period (decoupled from the live tick)
+
+// Rotating card identities (also the rotation order).
+enum {
+    BANNER_GIT = 0,
+    BANNER_DIFF,
+    BANNER_MODEL,
+    BANNER_COST,
+    BANNER_QUOTA,
+    N_BANNER,
+};
+
 // Sessions page — phone-style scrollable card list (round-safe centred geometry).
 #define SESS_TITLE_TOP 44    // title y from top (clears the round crown)
 #define SESS_LIST_W 350      // scroll container width (round-safe at this height)
@@ -98,7 +119,6 @@
 // Behaviour.
 #define TICK_MS 80              // UI repaint / animation tick
 #define LONG_PRESS_MS 3000      // hold-to-pair threshold (deliberate; avoids mis-touch)
-#define SHOW_FPS 1              // diagnostic FPS readout under the git branch (set 0 to strip)
 #define NOTIFY_AUTO_MS 8000     // low/normal notify auto-dismiss
 #define BRIGHT_IDLE 35
 #define BRIGHT_ACTIVE 100
@@ -129,12 +149,10 @@ static lv_obj_t *scr;
 static lv_obj_t *ring;
 static lv_obj_t *spinner; // working spinner: a dot orbiting the rim
 // live page
-static lv_obj_t *live_page, *model_pill, *model_lbl, *activity_lbl;
-static lv_obj_t *metric_big, *metric_sub, *git_lbl;
-#if SHOW_FPS
-static lv_obj_t *fps_lbl;
-#endif
+static lv_obj_t *live_page, *activity_lbl;
 static lv_obj_t *bar_fill[N_BARS], *bar_val[N_BARS];
+// banner (rotating info area): two ping-pong cards, each a label/hero/sub column
+static lv_obj_t *banner, *bcard[2], *blabel[2], *bhero[2], *bsub[2];
 // idle page
 static lv_obj_t *idle_page, *clock_lbl, *date_lbl, *idle_pill, *idle_pill_lbl;
 // sessions page
@@ -151,11 +169,15 @@ static int s_spin = 0;       // current spinner orbit angle (driven by lv_anim)
 static int s_anim_var = 0;   // dummy var to anchor the rotation animation
 static bool s_working = false; // spinner is the active indicator this frame
 static float s_pulse = 0;
-#if SHOW_FPS
-static volatile uint32_t s_fps_frames = 0; // rendered frames since last sample
-static int s_fps = 0;                      // last measured frames/sec
-#endif
 static char s_row_id[MODEL_MAX_SESSIONS][24];
+
+// Banner rotation state (driven by its own lv_timer, independent of the live tick
+// so it keeps rotating even when steady-WORKING skips the full live refresh).
+static int s_banner_cur = BANNER_GIT;   // card id currently shown in the front slot
+static int s_banner_front = 0;          // which bcard[] slot is the front (visible) card
+static int64_t s_banner_last_ms = 0;    // last advance time (esp_timer ms)
+static bool s_banner_anim = false;      // an odometer roll is in flight
+static int s_banner_anim_var = 0;       // anchors the roll animation
 
 static void tick_cb(lv_timer_t *t);
 
@@ -343,14 +365,6 @@ static void area_rounder_cb(lv_event_t *e) {
     a->y2 |= 1;
 }
 
-#if SHOW_FPS
-// Fires once per actually-rendered frame; tick_cb samples the count each second.
-static void fps_render_ready_cb(lv_event_t *e) {
-    (void)e;
-    s_fps_frames++;
-}
-#endif
-
 // One usage-bar row inside `parent`: right-aligned name, track+fill, value.
 static void build_bar_row(lv_obj_t *parent, int i) {
     lv_obj_t *row = lv_obj_create(parent);
@@ -393,28 +407,258 @@ static void build_bar_row(lv_obj_t *parent, int i) {
     bar_val[i] = val;
 }
 
+// =================================================================== banner ==
+// git status counts are per-file, so their sum is the changed-file count.
+static int git_file_count(const model_t *m) {
+    return m->git_staged + m->git_unstaged + m->git_untracked;
+}
+
+// "38.2k" for >=1000, plain int otherwise.
+static void fmt_k(char *out, size_t n, int v) {
+    if (v < 1000) snprintf(out, n, "%d", v);
+    else snprintf(out, n, "%.1fk", v / 1000.0f);
+}
+
+// Write a card id's label/hero/sub text+colour into bcard[slot]. All formatting
+// for the rotating cards lives here. Uses only existing model_t fields.
+static void fill_banner_card(int slot, int id, const model_t *m) {
+    char h[40], s[56];
+    uint32_t hero_col = COL_WHITE, sub_col = COL_DIM;
+    h[0] = '\0';
+    s[0] = '\0';
+    switch (id) {
+        case BANNER_GIT: {
+            lv_label_set_text(blabel[slot], "GIT");
+            snprintf(h, sizeof(h), "%s", m->git_branch[0] ? m->git_branch : "--");
+            int n = git_file_count(m);
+            if (n <= 0) snprintf(s, sizeof(s), "working tree clean");
+            else snprintf(s, sizeof(s), "%d file%s changed", n, n == 1 ? "" : "s");
+            break;
+        }
+        case BANNER_DIFF: {
+            lv_label_set_text(blabel[slot], "DIFF");
+            snprintf(h, sizeof(h), "+%d  -%d", m->lines_added, m->lines_removed);
+            int n = git_file_count(m);
+            snprintf(s, sizeof(s), "%d file%s", n, n == 1 ? "" : "s");
+            break;
+        }
+        case BANNER_MODEL: {
+            lv_label_set_text(blabel[slot], "MODEL");
+            snprintf(h, sizeof(h), "%s", m->model_short[0] ? m->model_short : "Claude");
+            if (m->has_ctx) {
+                char tok[12], lim[12];
+                fmt_k(tok, sizeof(tok), m->ctx_tokens);
+                fmt_k(lim, sizeof(lim), m->ctx_limit);
+                snprintf(s, sizeof(s), "%s / %s", tok, lim);
+                if (m->ctx_exceeds_200k) sub_col = COL_USAGE_HIGH;
+            }
+            break;
+        }
+        case BANNER_COST: {
+            lv_label_set_text(blabel[slot], "COST");
+            snprintf(h, sizeof(h), "$%.2f", m->cost_session_usd);
+            size_t off = 0;
+            if (m->cost_burn_per_hr > 0)
+                off += snprintf(s + off, sizeof(s) - off, "$%.1f/hr", m->cost_burn_per_hr);
+            if (m->cost_duration_min > 0) {
+                if (off) off += snprintf(s + off, sizeof(s) - off, "   ");
+                if (m->cost_duration_min >= 60)
+                    off += snprintf(s + off, sizeof(s) - off, "%.1fh", m->cost_duration_min / 60.0f);
+                else
+                    off += snprintf(s + off, sizeof(s) - off, "%dm", m->cost_duration_min);
+            }
+            break;
+        }
+        case BANNER_QUOTA: {
+            lv_label_set_text(blabel[slot], "QUOTA");
+            snprintf(h, sizeof(h), "%dm", m->block_reset_in_min);
+            snprintf(s, sizeof(s), "5h block resets");
+            break;
+        }
+        default: break;
+    }
+    lv_obj_set_style_text_color(bhero[slot], lv_color_hex(hero_col), 0);
+    lv_label_set_text(bhero[slot], h);
+    lv_obj_set_style_text_color(bsub[slot], lv_color_hex(sub_col), 0);
+    lv_label_set_text(bsub[slot], s);
+}
+
+// Whether a card has data to show this frame (gate from the spec).
+static bool banner_card_avail(int id, const model_t *m) {
+    switch (id) {
+        case BANNER_GIT: return m->has_git && m->git_branch[0];
+        case BANNER_DIFF: return m->has_cost && (m->lines_added || m->lines_removed);
+        case BANNER_MODEL: return m->model_short[0] || m->has_ctx;
+        case BANNER_COST: return m->has_cost;
+        case BANNER_QUOTA: return m->has_block;
+        default: return false;
+    }
+}
+
+// Fill `ids` with the available card ids in rotation order; return the count.
+static int banner_avail(const model_t *m, int *ids) {
+    int n = 0;
+    for (int id = 0; id < N_BANNER; id++)
+        if (banner_card_avail(id, m)) ids[n++] = id;
+    return n;
+}
+
+// Odometer roll: front card slides up & out, back card rolls up into place.
+static void banner_anim_cb(void *var, int32_t v) {
+    (void)var;
+    lv_obj_set_y(bcard[s_banner_front], -v);
+    lv_obj_set_y(bcard[1 - s_banner_front], BANNER_H - v);
+}
+
+static void banner_anim_done(lv_anim_t *a) {
+    (void)a;
+    int back = 1 - s_banner_front;
+    lv_obj_set_y(bcard[s_banner_front], BANNER_H); // park old front below
+    lv_obj_set_y(bcard[back], 0);                  // promote back into view
+    s_banner_front = back;
+    s_banner_anim = false;
+}
+
+// Snap to a card with no animation (used when the current card vanishes).
+static void banner_show(int id, const model_t *m) {
+    fill_banner_card(s_banner_front, id, m);
+    lv_obj_set_y(bcard[s_banner_front], 0);
+    s_banner_cur = id;
+}
+
+// Start an animated roll from the current card to `next_id`.
+static void banner_advance(int next_id, const model_t *m) {
+    int back = 1 - s_banner_front;
+    fill_banner_card(back, next_id, m);
+    lv_obj_set_y(bcard[back], BANNER_H); // start parked just below
+    s_banner_cur = next_id;
+    s_banner_anim = true;
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, &s_banner_anim_var);
+    lv_anim_set_exec_cb(&a, banner_anim_cb);
+    lv_anim_set_values(&a, 0, BANNER_H);
+    lv_anim_set_duration(&a, BANNER_ANIM_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    lv_anim_set_ready_cb(&a, banner_anim_done);
+    lv_anim_start(&a);
+}
+
+// Re-arm on (re)entering the live view: cancel any in-flight roll, reset card
+// positions, restart the dwell clock.
+static void banner_reset(void) {
+    lv_anim_delete(&s_banner_anim_var, banner_anim_cb);
+    s_banner_anim = false;
+    lv_obj_set_y(bcard[s_banner_front], 0);
+    lv_obj_set_y(bcard[1 - s_banner_front], BANNER_H);
+    s_banner_last_ms = esp_timer_get_time() / 1000;
+}
+
+static void build_banner_card(int slot) {
+    lv_obj_t *c = lv_obj_create(banner);
+    lv_obj_remove_style_all(c);
+    lv_obj_remove_flag(c, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(c, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(c, BANNER_W, BANNER_H);
+    lv_obj_set_x(c, 0);
+    lv_obj_set_flex_flow(c, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(c, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(c, GAP_TIGHT, 0);
+
+    lv_obj_t *lab = lv_label_create(c);
+    label_set(lab, &lv_font_montserrat_16, COL_DIM);
+    label_fixed(lab, BANNER_W);
+    lv_label_set_text(lab, "");
+
+    lv_obj_t *hero = lv_label_create(c);
+    label_set(hero, &lv_font_montserrat_28, COL_WHITE);
+    label_fixed(hero, BANNER_W);
+    lv_label_set_text(hero, "");
+
+    lv_obj_t *sub = lv_label_create(c);
+    label_set(sub, &lv_font_montserrat_16, COL_DIM);
+    label_fixed(sub, BANNER_W);
+    lv_label_set_text(sub, "");
+
+    bcard[slot] = c;
+    blabel[slot] = lab;
+    bhero[slot] = hero;
+    bsub[slot] = sub;
+}
+
+// Fixed-size info area; the two cards are positioned absolutely (set_y) and
+// clipped to this box, so a roll only invalidates the banner's own rect.
+static void build_banner(lv_obj_t *parent) {
+    banner = lv_obj_create(parent);
+    lv_obj_remove_style_all(banner);
+    lv_obj_remove_flag(banner, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(banner, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(banner, BANNER_W, BANNER_H);
+    build_banner_card(0);
+    build_banner_card(1);
+    lv_obj_set_y(bcard[0], 0);        // front (visible)
+    lv_obj_set_y(bcard[1], BANNER_H); // back, parked below (clipped away)
+}
+
+// Banner's own driver: refreshes the visible card's values and rotates on the
+// dwell timer. Decoupled from the live tick so it keeps rotating even when a
+// steady-WORKING frame skips the full live refresh.
+static void banner_tick_cb(lv_timer_t *t) {
+    (void)t;
+    if (s_view != VIEW_LIVE) return; // only animate while the live dashboard shows
+    if (s_banner_anim) return;       // a roll is in flight
+
+    model_lock();
+    model_t m = g_model;
+    model_unlock();
+
+    int ids[N_BANNER];
+    int n = banner_avail(&m, ids);
+    if (n == 0) {
+        set_hidden(banner, true);
+        return;
+    }
+    set_hidden(banner, false);
+
+    bool cur_ok = false;
+    for (int i = 0; i < n; i++)
+        if (ids[i] == s_banner_cur) { cur_ok = true; break; }
+    if (!cur_ok) { // current card lost its data — snap to the first available
+        banner_show(ids[0], &m);
+        s_banner_last_ms = esp_timer_get_time() / 1000;
+        return;
+    }
+
+    // Keep the visible card's values current (cheap; a no-op when text is equal).
+    fill_banner_card(s_banner_front, s_banner_cur, &m);
+
+    // ATTENTION freezes rotation; a single available card never rotates.
+    if (m.activity == ACT_ATTENTION || n <= 1) {
+        s_banner_last_ms = esp_timer_get_time() / 1000; // hold the dwell clock
+        return;
+    }
+
+    int64_t now = esp_timer_get_time() / 1000;
+    if (now - s_banner_last_ms >= BANNER_DWELL_MS) {
+        int idx = 0;
+        for (int i = 0; i < n; i++)
+            if (ids[i] == s_banner_cur) { idx = i; break; }
+        banner_advance(ids[(idx + 1) % n], &m);
+        s_banner_last_ms = now;
+    }
+}
+
 static void build_live_page(void) {
     live_page = make_page(GAP_SM);
-
-    model_pill = make_pill(live_page, COL_DIM);
-    model_lbl = lv_label_create(model_pill);
-    label_set(model_lbl, &lv_font_montserrat_20, COL_WHITE);
-    lv_label_set_text(model_lbl, "Claude");
 
     activity_lbl = lv_label_create(live_page);
     label_set(activity_lbl, &lv_font_montserrat_24, COL_WORKING);
     label_fixed(activity_lbl, LIVE_LBL_W);
     lv_label_set_text(activity_lbl, "ACTIVE");
 
-    metric_big = lv_label_create(live_page);
-    label_set(metric_big, &lv_font_montserrat_48, COL_WHITE);
-    label_fixed(metric_big, LIVE_LBL_W);
-    lv_label_set_text(metric_big, "");
-
-    metric_sub = lv_label_create(live_page);
-    label_set(metric_sub, &lv_font_montserrat_16, COL_DIM);
-    label_fixed(metric_sub, LIVE_LBL_W);
-    lv_label_set_text(metric_sub, "");
+    // Rotating info area between the activity label and the usage bars.
+    build_banner(live_page);
+    lv_obj_set_style_margin_top(banner, GAP_SM, 0);
 
     lv_obj_t *bars = lv_obj_create(live_page);
     lv_obj_remove_style_all(bars);
@@ -425,24 +669,6 @@ static void build_live_page(void) {
     lv_obj_set_style_pad_row(bars, GAP_SM, 0);
     lv_obj_set_style_margin_top(bars, GAP_MD, 0);
     for (int i = 0; i < N_BARS; i++) build_bar_row(bars, i);
-
-    git_lbl = lv_label_create(live_page);
-    label_set(git_lbl, &lv_font_montserrat_16, COL_DIM);
-    label_fixed(git_lbl, LIVE_LBL_W);
-    lv_obj_set_style_margin_top(git_lbl, GAP_MD, 0);
-    lv_label_set_text(git_lbl, "");
-
-#if SHOW_FPS
-    fps_lbl = lv_label_create(live_page);
-    label_set(fps_lbl, &lv_font_montserrat_16, COL_DIM);
-    lv_obj_set_style_margin_top(fps_lbl, GAP_TIGHT, 0);
-    // Fixed width + centered so the text changing each sample doesn't resize the
-    // label and trigger a full-page flex relayout (which would itself repaint the
-    // whole screen and skew the very FPS we're measuring).
-    lv_obj_set_width(fps_lbl, 260);
-    lv_obj_set_style_text_align(fps_lbl, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(fps_lbl, "");
-#endif
 }
 
 static void build_idle_page(void) {
@@ -631,11 +857,6 @@ void ui_init(void) {
     lv_display_add_event_cb(lv_display_get_default(), area_rounder_cb, LV_EVENT_INVALIDATE_AREA,
                             NULL);
 
-#if SHOW_FPS
-    lv_display_add_event_cb(lv_display_get_default(), fps_render_ready_cb, LV_EVENT_RENDER_READY,
-                            NULL);
-#endif
-
     build_ring();
     build_spinner();
     build_live_page();
@@ -656,6 +877,9 @@ void ui_init(void) {
     lv_anim_start(&a);
 
     lv_timer_create(tick_cb, TICK_MS, NULL);
+    // The banner rotates on its own clock, independent of the live tick, so it
+    // keeps cycling even when a steady-WORKING frame skips the full live refresh.
+    lv_timer_create(banner_tick_cb, BANNER_TICK_MS, NULL);
 }
 
 // ============================================================== screenshot ==
@@ -733,33 +957,13 @@ static void update_ring(activity_t a) {
 static void refresh_live(const model_t *m) {
     set_hidden(live_page, false);
 
-    lv_label_set_text(model_lbl, m->model_short[0] ? m->model_short : "Claude");
-
     lv_obj_set_style_text_color(activity_lbl, lv_color_hex(activity_color(m->activity)), 0);
     lv_label_set_text(activity_lbl, activity_text(m->activity));
     update_ring(m->activity);
 
-    char big[24];
-    if (m->has_cost) snprintf(big, sizeof(big), "$%.2f", m->cost_session_usd);
-    else if (m->has_ctx) snprintf(big, sizeof(big), "%d%%", m->ctx_used_pct);
-    else big[0] = '\0';
-    lv_label_set_text(metric_big, big);
-
-    char sub[48];
-    size_t off = 0;
-    sub[0] = '\0';
-    if (m->has_cost && m->cost_duration_min > 0) {
-        if (m->cost_duration_min >= 60)
-            off += snprintf(sub + off, sizeof(sub) - off, "%.1fh", m->cost_duration_min / 60.0f);
-        else
-            off += snprintf(sub + off, sizeof(sub) - off, "%dm", m->cost_duration_min);
-    }
-    if (m->has_cost && (m->lines_added || m->lines_removed)) {
-        if (off) off += snprintf(sub + off, sizeof(sub) - off, "   ");
-        off += snprintf(sub + off, sizeof(sub) - off, "+%d -%d", m->lines_added, m->lines_removed);
-    }
-    lv_label_set_text(metric_sub, sub);
-
+    // The model/cost/diff/git readouts now live in the auto-rotating banner,
+    // driven independently by banner_tick_cb. Here we only own the anchored
+    // activity label, the ring, and the three permanent usage bars.
     char v[8];
     if (m->has_ctx) {
         snprintf(v, sizeof(v), "%d%%", m->ctx_used_pct);
@@ -773,16 +977,6 @@ static void refresh_live(const model_t *m) {
         snprintf(v, sizeof(v), "%d%%", m->weekly_used_pct);
         set_bar(BAR_WEEK, true, m->weekly_used_pct, v);
     } else set_bar(BAR_WEEK, false, 0, "--");
-
-    if (m->has_git && m->git_branch[0]) {
-        int chg = m->git_staged + m->git_unstaged + m->git_untracked;
-        char g[64];
-        if (chg > 0) snprintf(g, sizeof(g), "%s  %d*", m->git_branch, chg);
-        else snprintf(g, sizeof(g), "%s", m->git_branch);
-        lv_label_set_text(git_lbl, g);
-    } else {
-        lv_label_set_text(git_lbl, "");
-    }
 }
 
 static void refresh_idle(const model_t *m) {
@@ -884,28 +1078,6 @@ static void tick_cb(lv_timer_t *t) {
 
     s_pulse += (m.activity == ACT_ATTENTION) ? 0.45f : 0.22f;
 
-#if SHOW_FPS
-    {
-        static int64_t fps_last_us = 0;
-        static uint32_t fps_last_frames = 0;
-        int64_t now_us = esp_timer_get_time();
-        if (fps_last_us == 0) {
-            fps_last_us = now_us;
-            fps_last_frames = s_fps_frames;
-        } else if (now_us - fps_last_us >= 500000) {
-            uint32_t df = s_fps_frames - fps_last_frames;
-            s_fps = (int)(((uint64_t)df * 1000000ULL) / (uint64_t)(now_us - fps_last_us));
-            fps_last_frames = s_fps_frames;
-            fps_last_us = now_us;
-            if (fps_lbl) {
-                char f[16];
-                snprintf(f, sizeof(f), "%d FPS", s_fps);
-                lv_label_set_text(fps_lbl, f);
-            }
-        }
-    }
-#endif
-
     static int last_bright = -1;
     int want = (m.link == LINK_NOLINK) ? BRIGHT_IDLE : BRIGHT_ACTIVE;
     if (want != last_bright) {
@@ -944,6 +1116,9 @@ static void tick_cb(lv_timer_t *t) {
     if (transitioned) {
         hide_all_pages();
         s_view = target;
+        // Re-arm the banner whenever the live dashboard (re)appears: cancel any
+        // stale roll, reset card positions, restart the dwell clock.
+        if (target == VIEW_LIVE) banner_reset();
     }
 
     // Steady WORKING needs no per-tick page work: the spinner dot animates on its
