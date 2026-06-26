@@ -84,6 +84,10 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.19)
+    optionalDependencies:
+      '@abandonware/noble':
+        specifier: 1.9.2-26
+        version: 1.9.2-26(encoding@0.1.13)
 
   packages/protocol:
     dependencies:

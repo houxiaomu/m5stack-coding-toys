@@ -51,6 +51,35 @@ Standard `m5ct` envelope `{v,k,t,p,id?}`, NDJSON framed, over the chip's native
 
 `device_id` is `WAVE-<MAC>` (e.g. `WAVE-288485551DBC`).
 
+## BLE transport (secondary)
+
+The same `m5ct` NDJSON protocol also runs over **BLE** (NimBLE peripheral,
+`main/ble.c`), so the daemon connects over Bluetooth when there's no USB data
+link to that host. Same GATT contract as CoreS3 SE — **no daemon/CLI/protocol
+logic changes**; the host only needs the `@abandonware/noble` optional dependency
+installed (already declared in the daemon + CLI packages).
+
+- Service `7d9a0000-…`, RX `…0001` (write), TX `…0002` (notify), Info `…0003`
+  (read, JSON `{v,board,fw,device_id,pairing[,pair_code]}`).
+- Advertises `m5ct-<device_id>` (service UUID in the adv packet, name in the scan
+  response — a 128-bit UUID + name won't both fit in 31 bytes).
+- **Long-press** the screen to enter pairing: advertises `…-PAIR`, shows a 6-digit
+  code, exits on connect or after 5 min. `m5ct pair` binds it as the default.
+- `proto.c` muxes USB + BLE: replies go back out the link a frame arrived on;
+  USB wins when both are live. The daemon also outranks BLE with serial when a
+  USB data link exists, so BLE is the cross-device / cable-free path.
+
+### BLE gotchas (don't regress)
+
+- **TX and RX are byte streams; frame on `\n`.** A central's write larger than
+  `ATT_MTU-3` is truncated, so the host must chunk (the daemon's `BleTransport`
+  uses 180 B). The device side accumulates RX bytes and frames lines itself.
+- **Console stays on UART0.** NimBLE host logs would corrupt the protocol if they
+  hit the USB-Serial/JTAG port — same reason the console is off USB.
+- **Screenshots over BLE work but are slow** (~28 s for the full 466×466 frame at
+  BLE throughput), past the host's 5 s screenshot timeout — screenshots are a USB
+  feature in practice. The status/notify/tap path is small and snappy over BLE.
+
 ## Build & flash
 
 ```bash

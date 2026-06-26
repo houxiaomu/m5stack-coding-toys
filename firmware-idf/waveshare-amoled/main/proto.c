@@ -16,6 +16,7 @@
 
 #include "model.h"
 #include "ui.h"
+#include "ble.h"
 
 static const char *TAG = "proto";
 
@@ -43,9 +44,44 @@ static const char *TAG = "proto";
 static char s_device_id[DEVICE_ID_LEN];
 static SemaphoreHandle_t s_tx_lock;
 
+// ---- transport mux (USB primary, BLE secondary) ----
+// s_active tracks where the most recent inbound frame arrived, so replies go
+// back out the same link. The daemon only ever drives one transport at a time
+// (serial outranks BLE host-side), so this stays unambiguous in practice.
+typedef enum { TR_USB, TR_BLE } tr_kind_t;
+static volatile tr_kind_t s_active = TR_USB;
+
 // ---------------------------------------------------------------- helpers ----
 
 static int64_t now_ms(void) { return esp_timer_get_time() / 1000; }
+
+// Chunked USB-Serial/JTAG writer: retries around a full TX ring, gives up rather
+// than hang forever if the host stops reading.
+static void usb_write_all(const uint8_t *p, size_t n) {
+    size_t off = 0;
+    int stall = 0;
+    while (off < n) {
+        int w = usb_serial_jtag_write_bytes(p + off, n - off, pdMS_TO_TICKS(WRITE_CHUNK_MS));
+        if (w > 0) {
+            off += (size_t)w;
+            stall = 0;
+        } else if (++stall > WRITE_MAX_STALLS) {
+            break;
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(WRITE_STALL_MS));
+        }
+    }
+}
+
+// Route a byte run to the active transport. BLE only when it's the live link;
+// USB is the default and fallback.
+static void transport_write(const uint8_t *p, size_t n) {
+    if (s_active == TR_BLE && ble_connected()) {
+        ble_write(p, n);
+    } else {
+        usb_write_all(p, n);
+    }
+}
 
 static void make_device_id(void) {
     uint8_t mac[6] = {0};
@@ -54,13 +90,13 @@ static void make_device_id(void) {
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
-// Frame a JSON string as one NDJSON line and push it out the USB port.
+// Frame a JSON string as one NDJSON line and push it out the active transport.
 static void send_line(const char *json) {
     if (!json) return;
     xSemaphoreTake(s_tx_lock, portMAX_DELAY);
-    usb_serial_jtag_write_bytes(json, strlen(json), pdMS_TO_TICKS(SEND_LINE_MS));
-    const char nl = '\n';
-    usb_serial_jtag_write_bytes(&nl, 1, pdMS_TO_TICKS(SEND_LINE_MS));
+    transport_write((const uint8_t *)json, strlen(json));
+    const uint8_t nl = '\n';
+    transport_write(&nl, 1);
     xSemaphoreGive(s_tx_lock);
 }
 
@@ -115,25 +151,11 @@ static void send_screenshot_ack_unsupported(const char *id) {
 static const char B64[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-static void write_all(const char *p, size_t n) {
-    size_t off = 0;
-    int stall = 0;
-    while (off < n) {
-        int w = usb_serial_jtag_write_bytes(p + off, n - off, pdMS_TO_TICKS(WRITE_CHUNK_MS));
-        if (w > 0) {
-            off += (size_t)w;
-            stall = 0;
-        } else if (++stall > WRITE_MAX_STALLS) {
-            break; // host stopped reading — give up rather than hang forever
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(WRITE_STALL_MS));
-        }
-    }
-}
+#define write_all(p, n) transport_write((const uint8_t *)(p), (n))
 
 // Capture the screen and stream the screenshot.ack as one NDJSON line, base64-
 // encoding the raw frame in small chunks so we never hold the whole string and
-// never overflow the USB-Serial/JTAG TX ring.
+// never overflow the USB-Serial/JTAG TX ring (or, over BLE, the notify path).
 static void send_screenshot(const char *id) {
     unsigned char *buf = NULL;
     int w = 0, h = 0;
@@ -388,28 +410,48 @@ static void handle_line(const char *line) {
 
 // ------------------------------------------------------------------- task ----
 
+// Frame a byte run from one transport into NDJSON lines. Each transport keeps
+// its own line buffer so interleaved bytes can't corrupt a frame; on a complete
+// line we mark that transport active (replies go back out the same link).
+static void feed_bytes(tr_kind_t src, char *line, size_t *len, const uint8_t *data, int n) {
+    for (int i = 0; i < n; i++) {
+        char c = (char)data[i];
+        if (c == '\n') {
+            line[*len] = '\0';
+            if (*len > 0) {
+                s_active = src;
+                handle_line(line);
+            }
+            *len = 0;
+        } else if (c != '\r') {
+            if (*len < LINE_BUF - 1) {
+                line[(*len)++] = c;
+            } else {
+                *len = 0; // overflow — drop the runaway frame
+            }
+        }
+    }
+}
+
 static void rx_task(void *arg) {
     (void)arg;
-    static char line[LINE_BUF];
-    size_t len = 0;
+    static char usb_line[LINE_BUF];
+    static char ble_line[LINE_BUF];
+    size_t usb_len = 0, ble_len = 0;
     uint8_t chunk[RX_CHUNK];
 
     for (;;) {
+        // USB first (blocking poll), so it wins "active" on simultaneous traffic.
         int n = usb_serial_jtag_read_bytes(chunk, sizeof(chunk), pdMS_TO_TICKS(READ_POLL_MS));
-        for (int i = 0; i < n; i++) {
-            char c = (char)chunk[i];
-            if (c == '\n') {
-                line[len] = '\0';
-                if (len > 0) handle_line(line);
-                len = 0;
-            } else if (c != '\r') {
-                if (len < LINE_BUF - 1) {
-                    line[len++] = c;
-                } else {
-                    len = 0; // overflow — drop the runaway frame
-                }
-            }
+        if (n > 0) feed_bytes(TR_USB, usb_line, &usb_len, chunk, n);
+
+        // Then drain whatever BLE buffered (non-blocking).
+        if (ble_connected()) {
+            int m = ble_read(chunk, sizeof(chunk));
+            if (m > 0) feed_bytes(TR_BLE, ble_line, &ble_len, chunk, m);
         }
+
+        ble_tick(now_ms());
 
         // Local NoLink detection: 15s of host silence drops us to the idle face.
         model_lock();
@@ -433,6 +475,10 @@ void proto_start(void) {
         .rx_buffer_size = USB_RX_BUF,
     };
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&cfg));
+
+    // BLE is the secondary transport: same NDJSON protocol, same device_id, so
+    // the daemon reconnects over either link with no host changes.
+    ble_start(s_device_id, FW_BOARD, FW_VERSION);
 
     xTaskCreate(rx_task, "proto_rx", RX_TASK_STACK, NULL, RX_TASK_PRIO, NULL);
 }

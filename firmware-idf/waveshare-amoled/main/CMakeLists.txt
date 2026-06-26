@@ -4,6 +4,7 @@ idf_component_register(
         "model.c"
         "proto.c"
         "ui.c"
+        "ble.c"
     INCLUDE_DIRS "."
     REQUIRES
         waveshare__esp32_s3_touch_amoled_1_75
@@ -16,4 +17,5 @@ idf_component_register(
         esp_driver_usb_serial_jtag
         json
         esp_timer
+        bt
 )

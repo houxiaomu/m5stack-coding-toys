@@ -31,6 +31,13 @@ typedef enum {
     URG_HIGH,
 } urgency_t;
 
+typedef enum {
+    BLE_UI_OFF = 0,   // radio not up yet
+    BLE_UI_READY,     // advertising, not connected
+    BLE_UI_PAIRING,   // advertising in pairing mode, code shown
+    BLE_UI_CONNECTED, // a central is connected over BLE
+} ble_ui_state_t;
+
 typedef struct {
     int index;
     char id[24];
@@ -78,6 +85,10 @@ typedef struct {
     // multi-session picker
     int session_count;
     session_t sessions[MODEL_MAX_SESSIONS];
+
+    // BLE transport state (for the pairing screen + a link glyph)
+    ble_ui_state_t ble_state;
+    char pair_code[7];
 
     // notify overlay (host -> device)
     bool notify_active;

@@ -38,6 +38,17 @@ CONFIG_ESP_CONSOLE_ROM_SERIAL_PORT_NUM=0
 # ---- FreeRTOS tick ----
 CONFIG_FREERTOS_HZ=1000
 
+# ---- Bluetooth: NimBLE host, BLE-only ----
+# Secondary m5ct transport (see main/ble.c). Same GATT contract as CoreS3 SE so
+# the daemon discovers/pairs/reconnects with no host changes. No bonding/MITM —
+# the app-layer 6-digit pair code is the user confirmation, like CoreS3.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+
 # ---- LVGL ----
 CONFIG_LV_COLOR_DEPTH_16=y
 CONFIG_LV_FONT_MONTSERRAT_16=y

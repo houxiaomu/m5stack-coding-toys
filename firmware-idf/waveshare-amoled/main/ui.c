@@ -16,6 +16,7 @@
 
 #include "model.h"
 #include "proto.h"
+#include "ble.h"
 
 // ============================================================ design tokens ==
 // Flat colour on true black. No gradients/shadows → no RGB565 banding.
@@ -70,6 +71,9 @@
 #define NOTIFY_RING_W 8
 #define NOTIFY_TEXT_W 320
 
+// Pairing screen.
+#define PAIR_CODE_TRACKING 6    // letter spacing for the 6-digit code
+
 // Behaviour.
 #define TICK_MS 80              // UI repaint / animation tick
 #define NOTIFY_AUTO_MS 8000     // low/normal notify auto-dismiss
@@ -100,6 +104,8 @@ static lv_obj_t *sess_page, *sess_row[MODEL_MAX_SESSIONS], *sess_dot[MODEL_MAX_S
     *sess_name[MODEL_MAX_SESSIONS];
 // notify page
 static lv_obj_t *notify_page, *notify_ring, *notify_title, *notify_body;
+// pairing page
+static lv_obj_t *pair_page, *pair_code_lbl;
 
 static page_t s_page = PAGE_LIVE;
 static int s_spin = 0;
@@ -189,6 +195,12 @@ void ui_tap(void) {
 static void on_scr_click(lv_event_t *e) {
     (void)e;
     ui_tap();
+}
+
+// Long-press anywhere toggles BLE pairing mode (mirrors CoreS3's gesture).
+static void on_scr_long_press(lv_event_t *e) {
+    (void)e;
+    ble_toggle_pairing(esp_timer_get_time() / 1000);
 }
 
 static void on_row_click(lv_event_t *e) {
@@ -398,6 +410,29 @@ static void build_notify_page(void) {
     lv_label_set_text(hint, "tap to dismiss");
 }
 
+// Shown while advertising in BLE pairing mode: the 6-digit code the host echoes.
+static void build_pair_page(void) {
+    pair_page = make_page(GAP_MD);
+
+    lv_obj_t *title = lv_label_create(pair_page);
+    label_set(title, &lv_font_montserrat_28, COL_WORKING);
+    lv_label_set_text(title, "BLE PAIRING");
+
+    pair_code_lbl = lv_label_create(pair_page);
+    label_set(pair_code_lbl, &lv_font_montserrat_48, COL_WHITE);
+    lv_obj_set_style_text_letter_space(pair_code_lbl, PAIR_CODE_TRACKING, 0);
+    lv_label_set_text(pair_code_lbl, "------");
+
+    lv_obj_t *hint = lv_label_create(pair_page);
+    label_set(hint, &lv_font_montserrat_16, COL_DIM);
+    lv_obj_set_style_margin_top(hint, GAP_MD, 0);
+    lv_label_set_text(hint, "run  m5ct pair  on host");
+
+    lv_obj_t *hint2 = lv_label_create(pair_page);
+    label_set(hint2, &lv_font_montserrat_16, COL_DIM);
+    lv_label_set_text(hint2, "long-press to cancel");
+}
+
 void ui_init(void) {
     scr = lv_screen_active();
     lv_obj_set_style_bg_color(scr, lv_color_hex(COL_BG), 0);
@@ -405,12 +440,14 @@ void ui_init(void) {
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(scr, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(scr, on_scr_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(scr, on_scr_long_press, LV_EVENT_LONG_PRESSED, NULL);
 
     build_ring();
     build_live_page();
     build_idle_page();
     build_sessions_page();
     build_notify_page();
+    build_pair_page();
 
     lv_timer_create(tick_cb, TICK_MS, NULL);
 }
@@ -592,12 +629,18 @@ static void refresh_notify(const model_t *m) {
     lv_label_set_text(notify_body, m->notify_body);
 }
 
+static void refresh_pair(const model_t *m) {
+    set_hidden(pair_page, false);
+    lv_label_set_text(pair_code_lbl, m->pair_code[0] ? m->pair_code : "------");
+}
+
 static void hide_all_pages(void) {
     set_hidden(ring, true);
     set_hidden(live_page, true);
     set_hidden(idle_page, true);
     set_hidden(sess_page, true);
     set_hidden(notify_page, true);
+    set_hidden(pair_page, true);
 }
 
 static void tick_cb(lv_timer_t *t) {
@@ -618,6 +661,12 @@ static void tick_cb(lv_timer_t *t) {
     }
 
     hide_all_pages();
+
+    // Pairing takes over the screen while active (no host link yet anyway).
+    if (m.ble_state == BLE_UI_PAIRING) {
+        refresh_pair(&m);
+        return;
+    }
 
     if (m.notify_active) {
         if (m.notify_urgency != URG_HIGH &&
