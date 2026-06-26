@@ -119,6 +119,7 @@ enum {
 // Behaviour.
 #define TICK_MS 80              // UI repaint / animation tick
 #define LONG_PRESS_MS 3000      // hold-to-pair threshold (deliberate; avoids mis-touch)
+#define SHOW_FPS 1              // diagnostic FPS readout under the usage bars (set 0 to strip)
 #define NOTIFY_AUTO_MS 8000     // low/normal notify auto-dismiss
 #define BRIGHT_IDLE 35
 #define BRIGHT_ACTIVE 100
@@ -151,6 +152,9 @@ static lv_obj_t *spinner; // working spinner: a dot orbiting the rim
 // live page
 static lv_obj_t *live_page, *activity_lbl;
 static lv_obj_t *bar_fill[N_BARS], *bar_val[N_BARS];
+#if SHOW_FPS
+static lv_obj_t *fps_lbl;
+#endif
 // banner (rotating info area): two ping-pong cards, each a label/hero/sub column
 static lv_obj_t *banner, *bcard[2], *blabel[2], *bhero[2], *bsub[2];
 // idle page
@@ -169,6 +173,10 @@ static int s_spin = 0;       // current spinner orbit angle (driven by lv_anim)
 static int s_anim_var = 0;   // dummy var to anchor the rotation animation
 static bool s_working = false; // spinner is the active indicator this frame
 static float s_pulse = 0;
+#if SHOW_FPS
+static volatile uint32_t s_fps_frames = 0; // rendered frames since last sample
+static int s_fps = 0;                      // last measured frames/sec
+#endif
 static char s_row_id[MODEL_MAX_SESSIONS][24];
 
 // Banner rotation state (driven by its own lv_timer, independent of the live tick
@@ -365,6 +373,14 @@ static void area_rounder_cb(lv_event_t *e) {
     a->y2 |= 1;
 }
 
+#if SHOW_FPS
+// Fires once per actually-rendered frame; tick_cb samples the count each second.
+static void fps_render_ready_cb(lv_event_t *e) {
+    (void)e;
+    s_fps_frames++;
+}
+#endif
+
 // One usage-bar row inside `parent`: right-aligned name, track+fill, value.
 static void build_bar_row(lv_obj_t *parent, int i) {
     lv_obj_t *row = lv_obj_create(parent);
@@ -428,17 +444,32 @@ static void fill_banner_card(int slot, int id, const model_t *m) {
     s[0] = '\0';
     switch (id) {
         case BANNER_GIT: {
-            lv_label_set_text(blabel[slot], "GIT");
-            snprintf(h, sizeof(h), "%s", m->git_branch[0] ? m->git_branch : "--");
-            int n = git_file_count(m);
-            if (n <= 0) snprintf(s, sizeof(s), "working tree clean");
-            else snprintf(s, sizeof(s), "%d file%s changed", n, n == 1 ? "" : "s");
+            // Project identity: repo-root name (hero) + branch (sub) — answers
+            // "which project, which line of work" at a glance across parallel
+            // sessions. Falls back to the old branch+dirty layout if the daemon
+            // doesn't send a repo name yet.
+            lv_label_set_text(blabel[slot], "REPO");
+            // Project name: git.repo (robust repo-root, new daemon) → workspace
+            // dir basename (works with the current daemon) → branch as last resort.
+            const char *proj = m->git_repo[0] ? m->git_repo : (m->ws_name[0] ? m->ws_name : NULL);
+            if (proj) {
+                snprintf(h, sizeof(h), "%s", proj);
+                snprintf(s, sizeof(s), "%s", m->git_branch);
+            } else {
+                snprintf(h, sizeof(h), "%s", m->git_branch[0] ? m->git_branch : "--");
+                int n = git_file_count(m);
+                if (n <= 0) snprintf(s, sizeof(s), "working tree clean");
+                else snprintf(s, sizeof(s), "%d file%s changed", n, n == 1 ? "" : "s");
+            }
             break;
         }
         case BANNER_DIFF: {
+            // Working-tree diff: files and lines from one source (git.diff) so
+            // they always agree (unlike pairing session-cumulative lines with the
+            // current dirty-file count, which diverge after a commit).
             lv_label_set_text(blabel[slot], "DIFF");
-            snprintf(h, sizeof(h), "+%d  -%d", m->lines_added, m->lines_removed);
-            int n = git_file_count(m);
+            snprintf(h, sizeof(h), "+%d  -%d", m->git_diff_added, m->git_diff_removed);
+            int n = m->git_diff_files;
             snprintf(s, sizeof(s), "%d file%s", n, n == 1 ? "" : "s");
             break;
         }
@@ -471,7 +502,12 @@ static void fill_banner_card(int slot, int id, const model_t *m) {
         }
         case BANNER_QUOTA: {
             lv_label_set_text(blabel[slot], "QUOTA");
-            snprintf(h, sizeof(h), "%dm", m->block_reset_in_min);
+            int mins = m->block_reset_in_min;
+            if (mins >= 60) {
+                int hh = mins / 60, mm = mins % 60;
+                if (mm) snprintf(h, sizeof(h), "%dh %dm", hh, mm);
+                else snprintf(h, sizeof(h), "%dh", hh);
+            } else snprintf(h, sizeof(h), "%dm", mins);
             snprintf(s, sizeof(s), "5h block resets");
             break;
         }
@@ -486,8 +522,8 @@ static void fill_banner_card(int slot, int id, const model_t *m) {
 // Whether a card has data to show this frame (gate from the spec).
 static bool banner_card_avail(int id, const model_t *m) {
     switch (id) {
-        case BANNER_GIT: return m->has_git && m->git_branch[0];
-        case BANNER_DIFF: return m->has_cost && (m->lines_added || m->lines_removed);
+        case BANNER_GIT: return m->has_git && (m->git_repo[0] || m->git_branch[0]);
+        case BANNER_DIFF: return m->has_git && m->git_diff_files > 0;
         case BANNER_MODEL: return m->model_short[0] || m->has_ctx;
         case BANNER_COST: return m->has_cost;
         case BANNER_QUOTA: return m->has_block;
@@ -669,6 +705,18 @@ static void build_live_page(void) {
     lv_obj_set_style_pad_row(bars, GAP_SM, 0);
     lv_obj_set_style_margin_top(bars, GAP_MD, 0);
     for (int i = 0; i < N_BARS; i++) build_bar_row(bars, i);
+
+#if SHOW_FPS
+    fps_lbl = lv_label_create(live_page);
+    label_set(fps_lbl, &lv_font_montserrat_16, COL_DIM);
+    lv_obj_set_style_margin_top(fps_lbl, GAP_SM, 0);
+    // Fixed width + centered so the text changing each sample doesn't resize the
+    // label and trigger a full-page flex relayout (which would itself repaint the
+    // whole screen and skew the very FPS we're measuring).
+    lv_obj_set_width(fps_lbl, 120);
+    lv_obj_set_style_text_align(fps_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(fps_lbl, "");
+#endif
 }
 
 static void build_idle_page(void) {
@@ -856,6 +904,11 @@ void ui_init(void) {
     // Even-align all partial writes for the CO5300 (prevents stale-pixel trails).
     lv_display_add_event_cb(lv_display_get_default(), area_rounder_cb, LV_EVENT_INVALIDATE_AREA,
                             NULL);
+
+#if SHOW_FPS
+    lv_display_add_event_cb(lv_display_get_default(), fps_render_ready_cb, LV_EVENT_RENDER_READY,
+                            NULL);
+#endif
 
     build_ring();
     build_spinner();
@@ -1077,6 +1130,28 @@ static void tick_cb(lv_timer_t *t) {
     model_unlock();
 
     s_pulse += (m.activity == ACT_ATTENTION) ? 0.45f : 0.22f;
+
+#if SHOW_FPS
+    {
+        static int64_t fps_last_us = 0;
+        static uint32_t fps_last_frames = 0;
+        int64_t now_us = esp_timer_get_time();
+        if (fps_last_us == 0) {
+            fps_last_us = now_us;
+            fps_last_frames = s_fps_frames;
+        } else if (now_us - fps_last_us >= 500000) {
+            uint32_t df = s_fps_frames - fps_last_frames;
+            s_fps = (int)(((uint64_t)df * 1000000ULL) / (uint64_t)(now_us - fps_last_us));
+            fps_last_frames = s_fps_frames;
+            fps_last_us = now_us;
+            if (fps_lbl) {
+                char f[16];
+                snprintf(f, sizeof(f), "%d FPS", s_fps);
+                lv_label_set_text(fps_lbl, f);
+            }
+        }
+    }
+#endif
 
     static int last_bright = -1;
     int want = (m.link == LINK_NOLINK) ? BRIGHT_IDLE : BRIGHT_ACTIVE;

@@ -75,12 +75,22 @@ typedef struct {
     bool has_weekly;
     int weekly_used_pct;
 
+    // workspace (Claude Code session cwd) — basename used as a project-name
+    // fallback when git.repo is absent (older daemon).
+    char ws_name[40];
+
     // git
     bool has_git;
     char git_branch[40];
+    char git_repo[40]; // repo-root dir name (project identity)
     int git_staged;
     int git_unstaged;
     int git_untracked;
+    // working-tree diff (git diff --numstat, staged + unstaged): files & lines
+    // from one source so they always agree. All 0 when the tree is clean.
+    int git_diff_files;
+    int git_diff_added;
+    int git_diff_removed;
 
     // multi-session picker
     int session_count;

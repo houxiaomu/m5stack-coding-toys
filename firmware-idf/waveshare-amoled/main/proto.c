@@ -322,15 +322,38 @@ static void apply_status(const cJSON *p) {
         m->has_weekly = false;
     }
 
+    cJSON *ws = cJSON_GetObjectItemCaseSensitive(p, "workspace");
+    if (cJSON_IsObject(ws)) {
+        char dir[160];
+        dir[0] = '\0';
+        jstr(ws, "dir", dir, sizeof(dir));
+        // basename: the text after the last '/' (project-name fallback)
+        const char *base = strrchr(dir, '/');
+        base = (base && base[1]) ? base + 1 : dir;
+        snprintf(m->ws_name, sizeof(m->ws_name), "%s", base);
+    } else {
+        m->ws_name[0] = '\0';
+    }
+
     cJSON *git = cJSON_GetObjectItemCaseSensitive(p, "git");
     if (cJSON_IsObject(git)) {
         m->has_git = true;
         jstr(git, "branch", m->git_branch, sizeof(m->git_branch));
+        jstr(git, "repo", m->git_repo, sizeof(m->git_repo));
         m->git_staged = jint(git, "staged", 0);
         m->git_unstaged = jint(git, "unstaged", 0);
         m->git_untracked = jint(git, "untracked", 0);
+        cJSON *diff = cJSON_GetObjectItemCaseSensitive(git, "diff");
+        if (cJSON_IsObject(diff)) {
+            m->git_diff_files = jint(diff, "filesChanged", 0);
+            m->git_diff_added = jint(diff, "linesAdded", 0);
+            m->git_diff_removed = jint(diff, "linesRemoved", 0);
+        } else {
+            m->git_diff_files = m->git_diff_added = m->git_diff_removed = 0;
+        }
     } else {
         m->has_git = false;
+        m->git_diff_files = m->git_diff_added = m->git_diff_removed = 0;
     }
 
     cJSON *sessions = cJSON_GetObjectItemCaseSensitive(p, "sessions");
