@@ -9,6 +9,7 @@ describe('GitEnricher', () => {
   it('parses branch / ahead-behind / counts / last commit', async () => {
     const run = fakeRunner({
       'rev-parse --abbrev-ref HEAD': 'feat/checkout-v2\n',
+      'rev-parse --show-toplevel': '/Users/dev/playground/m5toys\n',
       'rev-list --left-right --count @{upstream}...HEAD': '0\t3\n',
       'status --porcelain': ' M a.ts\nA  b.ts\n?? c.ts\nMM d.ts\n',
       'log -1 --format=%h%x1f%s%x1f%ct': `8a3c2f1\x1fwire up retry\x1f${String(
@@ -18,6 +19,8 @@ describe('GitEnricher', () => {
     const g = new GitEnricher(run)
     const out = await g.enrich('/repo', Date.now())
     expect(out?.branch).toBe('feat/checkout-v2')
+    // repo = basename of `git rev-parse --show-toplevel` (project identity)
+    expect(out?.repo).toBe('m5toys')
     expect(out).toMatchObject({ ahead: 3, behind: 0 })
     // ' M' unstaged, 'A ' staged, '??' untracked, 'MM' staged+unstaged
     expect(out).toMatchObject({ staged: 2, unstaged: 2, untracked: 1 })
@@ -95,8 +98,9 @@ describe('GitEnricher', () => {
     const t = 1000
     const first = await g.enrich('/repo', t)
     const second = await g.enrich('/repo', t + 100)
-    // 6 git subcommands per enrich; cached call adds none
-    expect(run.mock.calls.length).toBe(6)
+    // 7 git subcommands per enrich (branch, show-toplevel, ahead/behind, status,
+    // last-commit, diff, diff --cached); cached call adds none
+    expect(run.mock.calls.length).toBe(7)
     // cached call returns the stored result, not just a git skip
     expect(second).toEqual(first)
   })

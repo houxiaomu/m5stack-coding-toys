@@ -77,6 +77,7 @@ export const statusPayload = z
     git: z
       .object({
         branch: z.string(),
+        repo: z.string(), // repo-root dir name (basename of `git rev-parse --show-toplevel`)
         ahead: nonNegInt,
         behind: nonNegInt,
         staged: nonNegInt,

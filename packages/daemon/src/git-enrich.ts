@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { basename } from 'node:path'
 import { promisify } from 'node:util'
 import type { StatusPayload } from '@m5stack-coding-toys/protocol'
 import { makeLogger } from './logger.js'
@@ -33,9 +34,14 @@ export class GitEnricher {
     let value: GitFields | undefined
     try {
       const branch = (await this.run(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).trim()
+      // Repo-root dir name — a stable, always-available project identifier that
+      // doesn't change when the session cwd is a subdirectory (unlike the cwd
+      // basename) and needs no remote (unlike an org/repo slug).
+      const toplevel = (await this.run(['rev-parse', '--show-toplevel'], dir)).trim()
+      const repo = toplevel ? basename(toplevel) : ''
       const status = await this.run(['status', '--porcelain'], dir)
       const { staged, unstaged, untracked } = parsePorcelain(status)
-      const fields: GitFields = { branch, staged, unstaged, untracked, ahead: 0, behind: 0 }
+      const fields: GitFields = { branch, repo, staged, unstaged, untracked, ahead: 0, behind: 0 }
 
       try {
         const ab = (
