@@ -127,7 +127,7 @@ enum {
 // Behaviour.
 #define TICK_MS 80              // UI repaint / animation tick
 #define LONG_PRESS_MS 3000      // hold-to-pair threshold (deliberate; avoids mis-touch)
-#define SHOW_FPS 1              // diagnostic FPS readout under the usage bars (set 0 to strip)
+#define SHOW_FPS 0              // diagnostic FPS readout under the usage bars (set 1 to show)
 #define NOTIFY_AUTO_MS 8000     // low/normal notify auto-dismiss
 #define BRIGHT_IDLE 35
 #define BRIGHT_ACTIVE 100
