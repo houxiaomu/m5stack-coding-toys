@@ -69,6 +69,11 @@
 // text can change without re-flowing the page. Inside the round content area.
 #define LIVE_LBL_W 380
 
+// Lift the live page's activity row toward the crown (top-aligned, not centred)
+// so the new persistent identity line fits below it. Round-bezel safe (cf.
+// SESS_TITLE_TOP=44). Tune on-device via screenshot.
+#define LIVE_TOP_PAD 64
+
 // Usage bar row: [name][track][value].
 #define BAR_TRACK_W 120
 #define BAR_H 8
@@ -89,10 +94,10 @@
 #define BANNER_ANIM_MS 350   // odometer roll duration
 #define BANNER_TICK_MS 200   // banner's own driver period (decoupled from the live tick)
 
-// Rotating card identities (also the rotation order).
+// Rotating card identities (also the rotation order). Repo/branch identity is
+// shown persistently above the banner (identity_lbl), so it's not a card here.
 enum {
-    BANNER_GIT = 0,
-    BANNER_DIFF,
+    BANNER_DIFF = 0,
     BANNER_MODEL,
     BANNER_COST,
     BANNER_QUOTA,
@@ -158,7 +163,7 @@ static lv_obj_t *scr;
 static lv_obj_t *ring;
 static lv_obj_t *spinner; // working spinner: a dot orbiting the rim
 // live page
-static lv_obj_t *live_page, *activity_lbl;
+static lv_obj_t *live_page, *activity_lbl, *identity_lbl;
 static lv_obj_t *bar_fill[N_BARS], *bar_val[N_BARS];
 #if SHOW_FPS
 static lv_obj_t *fps_lbl;
@@ -189,7 +194,7 @@ static char s_row_id[MODEL_MAX_SESSIONS][24];
 
 // Banner rotation state (driven by its own lv_timer, independent of the live tick
 // so it keeps rotating even when steady-WORKING skips the full live refresh).
-static int s_banner_cur = BANNER_GIT;   // card id currently shown in the front slot
+static int s_banner_cur = BANNER_DIFF;  // card id currently shown in the front slot
 static int s_banner_front = 0;          // which bcard[] slot is the front (visible) card
 static int64_t s_banner_last_ms = 0;    // last advance time (esp_timer ms)
 static bool s_banner_anim = false;      // an odometer roll is in flight
@@ -220,8 +225,8 @@ static uint32_t activity_color(activity_t a) {
 static const char *activity_text(activity_t a) {
     switch (a) {
         case ACT_WORKING: return "WORKING";
-        case ACT_AWAITING: return "AWAITING INPUT";
-        case ACT_ATTENTION: return "NEEDS ATTENTION";
+        case ACT_AWAITING: return "AWAITING";
+        case ACT_ATTENTION: return "ATTENTION";
         default: return "ACTIVE";
     }
 }
@@ -432,11 +437,6 @@ static void build_bar_row(lv_obj_t *parent, int i) {
 }
 
 // =================================================================== banner ==
-// git status counts are per-file, so their sum is the changed-file count.
-static int git_file_count(const model_t *m) {
-    return m->git_staged + m->git_unstaged + m->git_untracked;
-}
-
 // "38.2k" for >=1000, plain int otherwise.
 static void fmt_k(char *out, size_t n, int v) {
     if (v < 1000) snprintf(out, n, "%d", v);
@@ -451,28 +451,6 @@ static void fill_banner_card(int slot, int id, const model_t *m) {
     h[0] = '\0';
     s[0] = '\0';
     switch (id) {
-        case BANNER_GIT: {
-            // Project identity: repo-root name (hero) + branch (sub) — answers
-            // "which project, which line of work" at a glance across parallel
-            // sessions. Falls back to the old branch+dirty layout if the daemon
-            // doesn't send a repo name yet.
-            lv_label_set_text(blabel[slot], "REPO");
-            // Project name: git.repo (robust repo-root, new daemon) → workspace
-            // dir basename (works with the current daemon) → branch as last resort.
-            const char *proj = m->git_repo[0] ? m->git_repo : (m->ws_name[0] ? m->ws_name : NULL);
-            if (proj) {
-                snprintf(h, sizeof(h), "%s", proj);
-                // No branch means the dir isn't a git repo — say so instead of
-                // leaving the sub line blank.
-                snprintf(s, sizeof(s), "%s", m->git_branch[0] ? m->git_branch : "no git");
-            } else {
-                snprintf(h, sizeof(h), "%s", m->git_branch[0] ? m->git_branch : "--");
-                int n = git_file_count(m);
-                if (n <= 0) snprintf(s, sizeof(s), "working tree clean");
-                else snprintf(s, sizeof(s), "%d file%s changed", n, n == 1 ? "" : "s");
-            }
-            break;
-        }
         case BANNER_DIFF: {
             // Working-tree diff: files and lines from one source (git.diff) so
             // they always agree (unlike pairing session-cumulative lines with the
@@ -532,7 +510,6 @@ static void fill_banner_card(int slot, int id, const model_t *m) {
 // Whether a card has data to show this frame (gate from the spec).
 static bool banner_card_avail(int id, const model_t *m) {
     switch (id) {
-        case BANNER_GIT: return m->git_repo[0] || m->git_branch[0] || m->ws_name[0];
         case BANNER_DIFF: return m->has_git && m->git_diff_files > 0;
         case BANNER_MODEL: return m->model_short[0] || m->has_ctx;
         case BANNER_COST: return m->has_cost;
@@ -696,13 +673,29 @@ static void banner_tick_cb(lv_timer_t *t) {
 
 static void build_live_page(void) {
     live_page = make_page(GAP_SM);
+    // Top-align this page only (idle/pair pages keep make_page's centring) and
+    // lift the activity row toward the crown so the identity line fits below it.
+    lv_obj_set_flex_align(live_page, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_top(live_page, LIVE_TOP_PAD, 0);
 
     activity_lbl = lv_label_create(live_page);
     label_set(activity_lbl, &lv_font_montserrat_24, COL_WORKING);
     label_fixed(activity_lbl, LIVE_LBL_W);
-    lv_label_set_text(activity_lbl, "ACTIVE");
+    lv_label_set_text(activity_lbl, "WORKING");
 
-    // Rotating info area between the activity label and the usage bars.
+    // Persistent session identity: "branch @ repo". Branch-first so same-repo
+    // worktrees (which share a repo name) are distinguished by the leading token.
+    // Fixed width + END dots: end-truncation naturally keeps the branch and clips
+    // the repo tail. Fixed width also avoids a full-page relayout on text change.
+    identity_lbl = lv_label_create(live_page);
+    label_set(identity_lbl, &lv_font_montserrat_16, COL_DIM);
+    lv_obj_set_width(identity_lbl, LIVE_LBL_W);
+    lv_obj_set_style_text_align(identity_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(identity_lbl, LV_LABEL_LONG_DOT);
+    lv_label_set_text(identity_lbl, "");
+
+    // Rotating info area between the identity line and the usage bars.
     build_banner(live_page);
     lv_obj_set_style_margin_top(banner, GAP_SM, 0);
 
@@ -1036,6 +1029,20 @@ static void refresh_live(const model_t *m) {
     lv_obj_set_style_text_color(activity_lbl, lv_color_hex(activity_color(m->activity)), 0);
     lv_label_set_text(activity_lbl, activity_text(m->activity));
     update_ring(m->activity);
+
+    // Persistent identity: "branch @ repo" (branch-first). Falls back to repo or
+    // branch alone, then the workspace dir name; hidden only when nothing is known
+    // (so it never leaves an empty gap).
+    char idbuf[88]; // two 40-char fields + " @ " + NUL
+    const char *repo = m->git_repo[0] ? m->git_repo : NULL;
+    const char *branch = m->git_branch[0] ? m->git_branch : NULL;
+    if (branch && repo)     snprintf(idbuf, sizeof(idbuf), "%s @ %s", branch, repo);
+    else if (repo)          snprintf(idbuf, sizeof(idbuf), "%s", repo);
+    else if (branch)        snprintf(idbuf, sizeof(idbuf), "%s", branch);
+    else if (m->ws_name[0]) snprintf(idbuf, sizeof(idbuf), "%s", m->ws_name);
+    else                    idbuf[0] = '\0';
+    set_hidden(identity_lbl, idbuf[0] == '\0');
+    lv_label_set_text(identity_lbl, idbuf);
 
     // The model/cost/diff/git readouts now live in the auto-rotating banner,
     // driven independently by banner_tick_cb. Here we only own the anchored
