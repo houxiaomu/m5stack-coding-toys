@@ -34,6 +34,26 @@ RGB565 colour-banding. Three link states drive the layout:
 - **Notify overlay** — host `notify` shows a full-screen pulsing ring (red=high)
   with title/body; tap to dismiss (low/normal auto-dismiss after 8s).
 
+## Physical buttons
+
+The two side buttons (`main/buttons.c`, `main/power.c`) complement the touch UI:
+
+- **PWR** (wired to the AXP2101 PMIC's PWRON pin, not an ESP GPIO — polled over
+  I²C at `0x34`): **short press toggles sleep** — panel off + the BLE radio
+  parked (`ble_suspend`/`ble_resume`), press again to wake and auto-reconnect;
+  **long press soft-powers-off** (AXP2101 `0x10` bit0). The board also
+  **auto-sleeps after 10 min** with no Live session (never during Live). Sleep
+  drops the link, so a new session won't auto-wake it — press PWR to resume.
+  > AXP2101 PWRON IRQ bits (INTSTS2 `0x49`: short `0x08`, long `0x10`) follow the
+  > XPowersLib layout. `power.c`'s `AXP_CALIBRATE` flag logs raw INTSTS2 for
+  > re-confirmation if a future board revision differs.
+- **BOOT** (GPIO0, debounced ~30 ms poll, short/long classified on release):
+  **short press opens the session picker** (the SESSIONS list) and, once open,
+  **steps an amber highlight cursor** through the sessions (wraps); **long press
+  confirms** — sends `focus` for the highlighted session and returns to Live.
+  Eyes-free session switching that also works after the screen is dimmed. The
+  amber cursor is distinct from the sky "selected" (host-foreground) border.
+
 ## Protocol
 
 Standard `m5ct` envelope `{v,k,t,p,id?}`, NDJSON framed, over the chip's native
