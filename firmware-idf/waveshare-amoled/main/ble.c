@@ -47,6 +47,7 @@ static const char *s_fw = "";
 static StreamBufferHandle_t s_rx_stream;
 static uint16_t s_tx_handle;
 static uint16_t s_conn = BLE_HS_CONN_HANDLE_NONE;
+static bool s_suspended = false; // radio parked for sleep (see ble_suspend)
 static uint16_t s_mtu = 23;
 static bool s_subscribed;
 static bool s_synced;
@@ -140,6 +141,7 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
 // ---- advertising (service UUID in adv packet, name in scan response) ----
 static void start_advertising(void) {
     if (!s_synced) return;
+    if (s_suspended) return; // radio parked for sleep; ble_resume() re-arms it
     ble_gap_adv_stop();
 
     snprintf(s_name, sizeof(s_name), s_pairing ? "m5ct-%s-PAIR" : "m5ct-%s", s_device_id);
@@ -281,6 +283,22 @@ void ble_start(const char *device_id, const char *board, const char *fw) {
 
 bool ble_connected(void) {
     return s_conn != BLE_HS_CONN_HANDLE_NONE;
+}
+
+// Park the radio for sleep: stop advertising and drop any link. The suspend
+// flag makes start_advertising() (incl. the auto-restart on disconnect) a no-op
+// until ble_resume() clears it.
+void ble_suspend(void) {
+    s_suspended = true;
+    if (s_conn != BLE_HS_CONN_HANDLE_NONE)
+        ble_gap_terminate(s_conn, BLE_ERR_REM_USER_CONN_TERM);
+    ble_gap_adv_stop();
+}
+
+// Re-arm advertising after sleep so the daemon can rediscover and reconnect.
+void ble_resume(void) {
+    s_suspended = false;
+    start_advertising();
 }
 
 int ble_read(uint8_t *buf, size_t n) {

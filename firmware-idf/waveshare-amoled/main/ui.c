@@ -203,6 +203,7 @@ static lv_obj_t *notify_page, *notify_ring, *notify_title, *notify_body;
 static lv_obj_t *pair_page, *pair_code_lbl;
 
 static page_t s_page = PAGE_LIVE;
+static int s_pick_idx = -1; // BOOT picker highlight cursor (-1 = none)
 static view_t s_view = VIEW_NONE; // currently shown view (transition tracking)
 static int s_spin = 0;       // current spinner orbit angle (driven by lv_anim)
 static int s_anim_var = 0;   // dummy var to anchor the rotation animation
@@ -349,7 +350,69 @@ void ui_tap(void) {
     }
     model_unlock();
     if (notif) return;
-    if (multi) s_page = (s_page == PAGE_LIVE) ? PAGE_SESSIONS : PAGE_LIVE;
+    if (multi) {
+        s_page = (s_page == PAGE_LIVE) ? PAGE_SESSIONS : PAGE_LIVE;
+        if (s_page == PAGE_SESSIONS) {
+            model_lock();
+            int fg = fg_session_index(&g_model);
+            model_unlock();
+            s_pick_idx = (fg >= 0) ? fg : 0;
+        } else {
+            s_pick_idx = -1;
+        }
+    }
+}
+
+// ----- BOOT session picker (driven by the physical BOOT button) ------------
+// s_pick_idx is a keyboard-style highlight cursor over the SESSIONS list,
+// distinct from sessions[i].selected (the host-focused foreground). -1 = no
+// cursor (paint nothing extra). These entries follow the same cross-task
+// contract as ui_tap: they only touch g_model (locked), s_page, and s_pick_idx.
+
+void ui_picker_open(void) {
+    model_lock();
+    bool notif = g_model.notify_active;
+    bool multi = (g_model.link == LINK_LIVE && g_model.session_count > 1);
+    int fg = multi ? fg_session_index(&g_model) : -1;
+    if (notif) {
+        g_model.notify_active = false;
+        g_model.dirty = true;
+    }
+    model_unlock();
+    if (notif) return;          // a button press first dismisses a notify
+    if (!multi) return;         // single session / not live → no picker
+    s_pick_idx = (fg >= 0) ? fg : 0;
+    s_page = PAGE_SESSIONS;
+}
+
+void ui_picker_next(void) {
+    if (s_page != PAGE_SESSIONS) return;
+    model_lock();
+    int n = g_model.session_count;
+    model_unlock();
+    if (n <= 0) return;
+    s_pick_idx = (s_pick_idx < 0) ? 0 : (s_pick_idx + 1) % n; // wrap
+}
+
+// Short press: step the cursor if the picker is open, else open it.
+void ui_picker_short(void) {
+    if (s_page == PAGE_SESSIONS) ui_picker_next();
+    else ui_picker_open();
+}
+
+void ui_picker_confirm(void) {
+    if (s_page != PAGE_SESSIONS) return;
+    char id[24] = "";
+    model_lock();
+    if (s_pick_idx >= 0 && s_pick_idx < g_model.session_count)
+        snprintf(id, sizeof(id), "%s", g_model.sessions[s_pick_idx].id);
+    model_unlock();
+    if (id[0]) {
+        proto_send_focus(id);
+        caro_pin(id); // hold the hand-picked session, like a row tap
+    }
+    s_page = PAGE_LIVE;
+    s_pick_idx = -1;
 }
 
 // Horizontal flick on the live page → hand-pick the adjacent session. Left = next
@@ -1528,7 +1591,13 @@ static void refresh_sessions(const model_t *m) {
             // Selected: sky tint fill + 3px sky border (obvious on true black);
             // unselected: transparent, no border.
             lv_obj_set_style_bg_opa(sess_row[i], s->selected ? LV_OPA_30 : LV_OPA_TRANSP, 0);
-            lv_obj_set_style_border_width(sess_row[i], s->selected ? 3 : 0, 0);
+            // BOOT picker cursor paints an amber border on top of the selected
+            // (sky) styling, so the cursor stays distinguishable from the
+            // host-focused foreground even when they land on the same card.
+            bool cursor = (i == s_pick_idx);
+            lv_obj_set_style_border_color(sess_row[i],
+                lv_color_hex(cursor ? COL_AWAITING : COL_SELECT), 0);
+            lv_obj_set_style_border_width(sess_row[i], (s->selected || cursor) ? 3 : 0, 0);
             lv_obj_set_style_text_color(sess_name[i],
                                         lv_color_hex(s->selected ? COL_WHITE : COL_DIM), 0);
             set_hidden(sess_row[i], false);

@@ -16,6 +16,11 @@ void ble_start(const char *device_id, const char *board, const char *fw);
 // True while a central is connected over BLE.
 bool ble_connected(void);
 
+// Park the radio for sleep (stop advertising + drop the link) and re-arm it.
+// While suspended the stack stays initialised so resume is cheap.
+void ble_suspend(void);
+void ble_resume(void);
+
 // Drain received bytes from the RX stream buffer (non-blocking). Returns the
 // number of bytes copied into buf (0 if none).
 int ble_read(uint8_t *buf, size_t n);
