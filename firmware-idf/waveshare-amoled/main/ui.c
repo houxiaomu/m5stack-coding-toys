@@ -94,6 +94,20 @@
 #define BANNER_ANIM_MS 350   // odometer roll duration
 #define BANNER_TICK_MS 200   // banner's own driver period (decoupled from the live tick)
 
+// Carousel (all-session auto-rotation). Layered onto banner_tick_cb: when a
+// session has shown every available banner once, the device focuses the next
+// session and waits for the host to echo it before counting that one's banners.
+#define CARO_PIN_MS 120000        // manual pin: hold a hand-picked session this long
+#define CARO_ATTN_HOLD_MS 120000  // max time the foreground may stay trapped by ATTENTION
+#define CARO_HANDOFF_MS 1500      // wait for host to echo selected==target after focus()
+#define CARO_HANDOFF_RETRIES 1    // re-send focus this many times before skipping a target
+
+// Overview dot strip on the live page: one dot per session, colour = activity.
+#define CARO_DOT_D 12        // base dot diameter
+#define CARO_DOT_CUR_D 18    // current (foreground) dot diameter
+#define CARO_DOT_GAP 10
+#define CARO_STRIP_BOTTOM 40 // strip y-inset from the page bottom (round-safe)
+
 // Rotating card identities (also the rotation order). Repo/branch identity is
 // shown persistently above the banner (identity_lbl), so it's not a card here.
 enum {
@@ -165,6 +179,8 @@ static lv_obj_t *spinner; // working spinner: a dot orbiting the rim
 // live page
 static lv_obj_t *live_page, *activity_lbl, *identity_lbl;
 static lv_obj_t *bar_fill[N_BARS], *bar_val[N_BARS];
+// overview dot strip (one dot per session, pinned to the live page bottom)
+static lv_obj_t *caro_strip, *caro_dot[MODEL_MAX_SESSIONS];
 #if SHOW_FPS
 static lv_obj_t *fps_lbl;
 #endif
@@ -200,7 +216,27 @@ static int64_t s_banner_last_ms = 0;    // last advance time (esp_timer ms)
 static bool s_banner_anim = false;      // an odometer roll is in flight
 static int s_banner_anim_var = 0;       // anchors the roll animation
 
+// Carousel state. The "foreground" session (host-selected) is derived per frame;
+// s_caro_target is the session this device is trying to show. They differ only
+// during a handoff (focus sent, waiting for the host to switch).
+typedef enum { CARO_AUTO = 0, CARO_PINNED, CARO_HANDOFF } caro_mode_t;
+static caro_mode_t s_caro_mode = CARO_AUTO;
+static char s_caro_target[24] = "";       // session id we want shown
+static int64_t s_caro_pin_until_ms = 0;   // CARO_PINNED expiry (esp_timer ms)
+static int64_t s_caro_attn_since_ms = 0;  // when the foreground entered ATTENTION (0 = not)
+static int64_t s_caro_handoff_ms = 0;     // when focus(target) was last sent
+static int s_caro_handoff_tries = 0;      // focus re-sends so far this handoff
+static int s_caro_shown = 0;              // distinct available banners shown this session
+// Snapshot of last frame's per-session activity, for background ATTENTION edge detect.
+static activity_t s_caro_prev_act[MODEL_MAX_SESSIONS];
+static char s_caro_prev_id[MODEL_MAX_SESSIONS][24];
+static int s_caro_prev_n = 0;
+// Live-page slide trigger: last foreground id we rendered + the slide anim anchor.
+static char s_live_fg[24] = "";
+static int s_live_slide_var = 0;
+
 static void tick_cb(lv_timer_t *t);
+static void caro_pin(const char *id); // defined with the carousel helpers below
 
 // ================================================================== helpers ==
 static void set_hidden(lv_obj_t *o, bool hide) {
@@ -317,7 +353,10 @@ static void on_row_click(lv_event_t *e) {
     bool already = (idx < g_model.session_count && g_model.sessions[idx].selected);
     model_unlock();
     if (already) s_page = PAGE_LIVE;
-    else proto_send_focus(s_row_id[idx]);
+    else {
+        proto_send_focus(s_row_id[idx]);
+        caro_pin(s_row_id[idx]); // hold this hand-picked session for CARO_PIN_MS
+    }
 }
 
 // =================================================================== build ==
@@ -623,6 +662,83 @@ static void build_banner(lv_obj_t *parent) {
     lv_obj_set_y(bcard[1], BANNER_H); // back, parked below (clipped away)
 }
 
+// ================================================================ carousel ==
+// Index of the host-selected (foreground) session, or -1 if none is marked.
+static int fg_session_index(const model_t *m) {
+    for (int i = 0; i < m->session_count && i < MODEL_MAX_SESSIONS; i++)
+        if (m->sessions[i].selected) return i;
+    return -1;
+}
+
+// Id of the foreground session, or "" if none.
+static const char *fg_session_id(const model_t *m) {
+    int i = fg_session_index(m);
+    return i >= 0 ? m->sessions[i].id : "";
+}
+
+// Next session id after cur_id in sessions[] order (wraps). "" if <2 sessions.
+static const char *caro_next_id(const model_t *m, const char *cur_id) {
+    if (m->session_count < 2) return "";
+    int cur = -1;
+    for (int i = 0; i < m->session_count; i++)
+        if (!strcmp(m->sessions[i].id, cur_id)) { cur = i; break; }
+    int start = (cur < 0) ? 0 : (cur + 1) % m->session_count;
+    return m->sessions[start].id; // distinct from cur_id because count>=2
+}
+
+// Called once the foreground == target: start counting this session's banners.
+static void caro_enter_session(void) {
+    s_caro_shown = 1; // the card we're entering on counts as shown
+}
+
+static void caro_begin_handoff(const char *id) {
+    snprintf(s_caro_target, sizeof(s_caro_target), "%s", id);
+    s_caro_mode = CARO_HANDOFF;
+    s_caro_handoff_ms = esp_timer_get_time() / 1000;
+    s_caro_handoff_tries = 0;
+    proto_send_focus(id);
+}
+
+// Hand-pick a session: hold it (no auto-hop) for CARO_PIN_MS. Called from the
+// touch/proto path (like ui_tap's s_page write — only carousel statics touched).
+static void caro_pin(const char *id) {
+    if (!id || !id[0]) return;
+    snprintf(s_caro_target, sizeof(s_caro_target), "%s", id);
+    s_caro_mode = CARO_PINNED;
+    s_caro_pin_until_ms = (esp_timer_get_time() / 1000) + CARO_PIN_MS;
+}
+
+// Detect a background session that just transitioned INTO ATTENTION (edge, not
+// level) since the last frame. Foreground is excluded (it's handled by A1).
+static bool caro_bg_attention(const model_t *m, char *out, size_t outn) {
+    const char *fg = fg_session_id(m);
+    for (int i = 0; i < m->session_count && i < MODEL_MAX_SESSIONS; i++) {
+        const session_t *s = &m->sessions[i];
+        if (s->activity != ACT_ATTENTION) continue;
+        if (!strcmp(s->id, fg)) continue; // foreground handled elsewhere
+        bool was_attn = false, seen = false;
+        for (int j = 0; j < s_caro_prev_n && j < MODEL_MAX_SESSIONS; j++)
+            if (!strcmp(s_caro_prev_id[j], s->id)) {
+                seen = true;
+                was_attn = (s_caro_prev_act[j] == ACT_ATTENTION);
+                break;
+            }
+        if (seen && was_attn) continue; // not a fresh edge
+        snprintf(out, outn, "%s", s->id);
+        return true;
+    }
+    return false;
+}
+
+// Save this frame's per-session activity for next frame's edge detection.
+static void caro_snapshot(const model_t *m) {
+    s_caro_prev_n = m->session_count < MODEL_MAX_SESSIONS ? m->session_count : MODEL_MAX_SESSIONS;
+    for (int i = 0; i < s_caro_prev_n; i++) {
+        s_caro_prev_act[i] = m->sessions[i].activity;
+        snprintf(s_caro_prev_id[i], sizeof(s_caro_prev_id[i]), "%s", m->sessions[i].id);
+    }
+}
+
 // Banner's own driver: refreshes the visible card's values and rotates on the
 // dwell timer. Decoupled from the live tick so it keeps rotating even when a
 // steady-WORKING frame skips the full live refresh.
@@ -635,10 +751,77 @@ static void banner_tick_cb(lv_timer_t *t) {
     model_t m = g_model;
     model_unlock();
 
+    int64_t now = esp_timer_get_time() / 1000;
+
+    // ---- carousel: session-level state (only with >=2 live sessions) ----
+    bool caro_on = (m.link == LINK_LIVE && m.session_count >= 2 && s_page == PAGE_LIVE);
+    const char *fg = fg_session_id(&m);
+
+    if (caro_on) {
+        // Resolve an in-flight handoff: did the host switch to our target yet?
+        if (s_caro_mode == CARO_HANDOFF) {
+            if (s_caro_target[0] && !strcmp(fg, s_caro_target)) {
+                s_caro_mode = CARO_AUTO;       // confirmed → start its banner cycle
+                caro_enter_session();
+                s_caro_attn_since_ms = 0;
+                s_banner_last_ms = now;        // full dwell for the new session
+                // fall through and display the new session this tick
+            } else if (now - s_caro_handoff_ms >= CARO_HANDOFF_MS) {
+                if (s_caro_handoff_tries < CARO_HANDOFF_RETRIES) {
+                    s_caro_handoff_tries++;
+                    s_caro_handoff_ms = now;
+                    proto_send_focus(s_caro_target); // re-send
+                } else {
+                    const char *nxt = caro_next_id(&m, s_caro_target); // skip this target
+                    if (nxt[0] && strcmp(nxt, s_caro_target)) caro_begin_handoff(nxt);
+                    else { s_caro_mode = CARO_AUTO; s_caro_target[0] = '\0'; }
+                }
+                caro_snapshot(&m);
+                return; // hold the screen until the switch lands
+            } else {
+                caro_snapshot(&m);
+                return; // still waiting for the host echo
+            }
+        }
+        // Expire a manual pin → resume auto rotation.
+        if (s_caro_mode == CARO_PINNED && now >= s_caro_pin_until_ms) {
+            s_caro_mode = CARO_AUTO;
+            caro_enter_session();
+            s_banner_last_ms = now;
+        }
+        // Background ATTENTION preempt (AUTO only — never while pinned/handoff).
+        if (s_caro_mode == CARO_AUTO) {
+            char attn[24];
+            if (caro_bg_attention(&m, attn, sizeof(attn))) {
+                caro_begin_handoff(attn); // jump to the session that needs a human
+                s_banner_last_ms = now;
+                caro_snapshot(&m);
+                return;
+            }
+        }
+        // Adopt the foreground as target if we have none (first entry/external focus).
+        if (s_caro_target[0] == '\0' && fg[0]) {
+            snprintf(s_caro_target, sizeof(s_caro_target), "%s", fg);
+            caro_enter_session();
+        }
+    } else {
+        // Single session / off the live page: reset so the carousel re-arms cleanly.
+        s_caro_mode = CARO_AUTO;
+        s_caro_target[0] = '\0';
+        s_caro_attn_since_ms = 0;
+    }
+
+    // ---- banner availability ----
     int ids[N_BANNER];
     int n = banner_avail(&m, ids);
     if (n == 0) {
         set_hidden(banner, true);
+        // Zero-banner session: still dwell a floor then hop.
+        if (caro_on && s_caro_mode == CARO_AUTO && now - s_banner_last_ms >= BANNER_DWELL_MS) {
+            const char *nxt = caro_next_id(&m, fg);
+            if (nxt[0]) { caro_begin_handoff(nxt); s_banner_last_ms = now; }
+        }
+        caro_snapshot(&m);
         return;
     }
     set_hidden(banner, false);
@@ -648,27 +831,61 @@ static void banner_tick_cb(lv_timer_t *t) {
         if (ids[i] == s_banner_cur) { cur_ok = true; break; }
     if (!cur_ok) { // current card lost its data — snap to the first available
         banner_show(ids[0], &m);
-        s_banner_last_ms = esp_timer_get_time() / 1000;
+        s_banner_last_ms = now;
+        caro_snapshot(&m);
         return;
     }
 
     // Keep the visible card's values current (cheap; a no-op when text is equal).
     fill_banner_card(s_banner_front, s_banner_cur, &m);
 
-    // ATTENTION freezes rotation; a single available card never rotates.
-    if (m.activity == ACT_ATTENTION || n <= 1) {
-        s_banner_last_ms = esp_timer_get_time() / 1000; // hold the dwell clock
+    // ATTENTION trap (A1): freezes banner rotation → natural carousel trap, with a
+    // CARO_ATTN_HOLD_MS cap so the carousel eventually breaks out and moves on.
+    if (m.activity == ACT_ATTENTION) {
+        if (s_caro_attn_since_ms == 0) s_caro_attn_since_ms = now;
+        if (caro_on && s_caro_mode == CARO_AUTO &&
+            now - s_caro_attn_since_ms >= CARO_ATTN_HOLD_MS) {
+            const char *nxt = caro_next_id(&m, fg);
+            if (nxt[0]) {
+                caro_begin_handoff(nxt);
+                s_banner_last_ms = now;
+                s_caro_attn_since_ms = 0;
+                caro_snapshot(&m);
+                return;
+            }
+        }
+        s_banner_last_ms = now; // hold the dwell clock
+        caro_snapshot(&m);
+        return;
+    }
+    s_caro_attn_since_ms = 0; // not in attention → reset the trap timer
+
+    // Single available card never rotates; use the dwell as a per-session floor.
+    if (n <= 1) {
+        if (caro_on && s_caro_mode == CARO_AUTO && now - s_banner_last_ms >= BANNER_DWELL_MS) {
+            const char *nxt = caro_next_id(&m, fg);
+            if (nxt[0]) { caro_begin_handoff(nxt); s_banner_last_ms = now; caro_snapshot(&m); return; }
+        }
+        s_banner_last_ms = now;
+        caro_snapshot(&m);
         return;
     }
 
-    int64_t now = esp_timer_get_time() / 1000;
+    // Multi-banner rotation. On the dwell tick, hop sessions once every available
+    // banner has been shown once (CARO_AUTO); otherwise roll to the next banner.
     if (now - s_banner_last_ms >= BANNER_DWELL_MS) {
+        if (caro_on && s_caro_mode == CARO_AUTO && s_caro_shown >= n) {
+            const char *nxt = caro_next_id(&m, fg);
+            if (nxt[0]) { caro_begin_handoff(nxt); s_banner_last_ms = now; caro_snapshot(&m); return; }
+        }
         int idx = 0;
         for (int i = 0; i < n; i++)
             if (ids[i] == s_banner_cur) { idx = i; break; }
         banner_advance(ids[(idx + 1) % n], &m);
         s_banner_last_ms = now;
+        if (caro_on) s_caro_shown++;
     }
+    caro_snapshot(&m);
 }
 
 static void build_live_page(void) {
@@ -708,6 +925,35 @@ static void build_live_page(void) {
     lv_obj_set_style_pad_row(bars, GAP_SM, 0);
     lv_obj_set_style_margin_top(bars, GAP_MD, 0);
     for (int i = 0; i < N_BARS; i++) build_bar_row(bars, i);
+
+    // Overview dot strip: one dot per session, colour = each session's activity,
+    // the current (foreground) one enlarged + ringed. Pinned to the page bottom
+    // and IGNORE_LAYOUT so toggling dot visibility never relayouts the live column
+    // (a full-page flex relayout would full-screen repaint and starve the spinner).
+    caro_strip = lv_obj_create(live_page);
+    lv_obj_remove_style_all(caro_strip);
+    lv_obj_remove_flag(caro_strip, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(caro_strip, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    lv_obj_set_size(caro_strip, LIVE_LBL_W, CARO_DOT_CUR_D);
+    lv_obj_align(caro_strip, LV_ALIGN_BOTTOM_MID, 0, -CARO_STRIP_BOTTOM);
+    lv_obj_set_flex_flow(caro_strip, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(caro_strip, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(caro_strip, CARO_DOT_GAP, 0);
+    for (int i = 0; i < MODEL_MAX_SESSIONS; i++) {
+        lv_obj_t *d = lv_obj_create(caro_strip);
+        lv_obj_remove_style_all(d);
+        lv_obj_remove_flag(d, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_size(d, CARO_DOT_D, CARO_DOT_D);
+        lv_obj_set_style_radius(d, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(d, lv_color_hex(COL_LINKED), 0);
+        lv_obj_set_style_bg_opa(d, LV_OPA_COVER, 0);
+        // Current-dot accent: a sky ring (border) toggled on per-frame; a thicker
+        // ring marks a manual pin (the pin indicator — no glyph/font needed).
+        lv_obj_set_style_border_color(d, lv_color_hex(COL_SELECT), 0);
+        lv_obj_set_style_border_width(d, 0, 0);
+        caro_dot[i] = d;
+    }
 
 #if SHOW_FPS
     fps_lbl = lv_label_create(live_page);
@@ -1023,6 +1269,48 @@ static void update_ring(activity_t a) {
     }
 }
 
+// Overview dot strip: per-session activity dots, current one enlarged + ringed
+// (thicker ring while pinned). Hidden entirely with <2 sessions (no carousel).
+static void refresh_caro_strip(const model_t *m) {
+    bool show = (m->session_count >= 2);
+    set_hidden(caro_strip, !show);
+    if (!show) return;
+    int fg = fg_session_index(m);
+    for (int i = 0; i < MODEL_MAX_SESSIONS; i++) {
+        if (i < m->session_count) {
+            bool cur = (i == fg);
+            int d = cur ? CARO_DOT_CUR_D : CARO_DOT_D;
+            lv_obj_set_size(caro_dot[i], d, d);
+            lv_obj_set_style_bg_color(caro_dot[i],
+                                      lv_color_hex(activity_color(m->sessions[i].activity)), 0);
+            int bw = cur ? (s_caro_mode == CARO_PINNED ? 4 : 2) : 0;
+            lv_obj_set_style_border_width(caro_dot[i], bw, 0);
+            set_hidden(caro_dot[i], false);
+        } else {
+            set_hidden(caro_dot[i], true);
+        }
+    }
+}
+
+// Slide the live content column in from the right (new session). Uses translate_x
+// (a render-time transform) so it never relayouts the column — only re-blits its
+// rect. The rim/spinner/strip are separate children of scr and stay put.
+static void live_slide_exec(void *var, int32_t v) {
+    (void)var;
+    lv_obj_set_style_translate_x(live_page, v, 0);
+}
+static void live_slide_in(void) {
+    lv_anim_delete(&s_live_slide_var, live_slide_exec);
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, &s_live_slide_var);
+    lv_anim_set_exec_cb(&a, live_slide_exec);
+    lv_anim_set_values(&a, DISP_SIZE / 3, 0); // start offset right → settle centered
+    lv_anim_set_duration(&a, 280);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_start(&a);
+}
+
 static void refresh_live(const model_t *m) {
     set_hidden(live_page, false);
 
@@ -1060,6 +1348,8 @@ static void refresh_live(const model_t *m) {
         snprintf(v, sizeof(v), "%d%%", m->weekly_used_pct);
         set_bar(BAR_WEEK, true, m->weekly_used_pct, v);
     } else set_bar(BAR_WEEK, false, 0, "--");
+
+    refresh_caro_strip(m);
 }
 
 static void refresh_idle(const model_t *m) {
@@ -1254,8 +1544,27 @@ static void tick_cb(lv_timer_t *t) {
         hide_all_pages();
         s_view = target;
         // Re-arm the banner whenever the live dashboard (re)appears: cancel any
-        // stale roll, reset card positions, restart the dwell clock.
-        if (target == VIEW_LIVE) banner_reset();
+        // stale roll, reset card positions, restart the dwell clock. Also clear any
+        // left-over slide offset so the column starts centered.
+        if (target == VIEW_LIVE) {
+            banner_reset();
+            lv_obj_set_style_translate_x(live_page, 0, 0);
+        }
+    }
+
+    // Carousel overview + slide: track the foreground dot and slide the content
+    // column in on a session hop. Runs every live tick (even steady_live ones, so
+    // the strip/slide follow hops); cheap — touches only small dot rects + a
+    // transform. Re-arm s_live_fg when off the live view.
+    if (target == VIEW_LIVE) {
+        refresh_caro_strip(&m);
+        const char *fg = fg_session_id(&m);
+        if (fg[0] && strcmp(fg, s_live_fg) != 0) {
+            if (s_live_fg[0]) live_slide_in(); // skip the very first appearance
+            snprintf(s_live_fg, sizeof(s_live_fg), "%s", fg);
+        }
+    } else {
+        s_live_fg[0] = '\0';
     }
 
     // Steady LIVE states need no per-tick page work: WORKING's spinner dot
