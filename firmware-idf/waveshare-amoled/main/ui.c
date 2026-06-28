@@ -208,6 +208,8 @@ static int s_spin = 0;       // current spinner orbit angle (driven by lv_anim)
 static int s_anim_var = 0;   // dummy var to anchor the rotation animation
 static bool s_working = false; // spinner is the active indicator this frame
 static float s_pulse = 0;
+static bool s_switching = false; // a session switch is sliding in: freeze the dial
+static int s_slide_dir = 1;      // +1 = new content from the right (next), -1 = from left (prev)
 #if SHOW_FPS
 static volatile uint32_t s_fps_frames = 0; // rendered frames since last sample
 static int s_fps = 0;                      // last measured frames/sec
@@ -381,6 +383,7 @@ static void on_scr_gesture(lv_event_t *e) {
     if (!next_id[0]) return; // single session / not live → no-op (tap path untouched)
 
     snprintf(s_swipe_target_id, sizeof(s_swipe_target_id), "%s", next_id);
+    s_slide_dir = (dir == LV_DIR_LEFT) ? 1 : -1; // left=next→from right, right=prev→from left
     int64_t now = esp_timer_get_time() / 1000;
     s_swipe_send_at = now + SWIPE_COALESCE_MS; // flush once the flick settles
     s_swipe_consumed_ms = now;                 // eat the trailing click
@@ -754,6 +757,7 @@ static void caro_begin_handoff(const char *id) {
     s_caro_mode = CARO_HANDOFF;
     s_caro_handoff_ms = esp_timer_get_time() / 1000;
     s_caro_handoff_tries = 0;
+    s_slide_dir = 1; // auto-carousel advances forward → new content enters from the right
     proto_send_focus(id);
 }
 
@@ -1370,29 +1374,49 @@ static void refresh_caro_strip(const model_t *m) {
     }
 }
 
-// Slide the live content column in from the right (new session). Uses translate_x
-// (a render-time transform) so it never relayouts the column — only re-blits its
-// rect. The rim/spinner/strip are separate children of scr and stay put.
+// Slide the live content column in (new session). Uses translate_x (a render-time
+// transform) so it never relayouts the column — only re-blits its rect. The
+// rim/spinner/strip are separate children of scr and stay put. Direction follows
+// s_slide_dir: +1 enters from the right (next/forward), -1 from the left (prev).
 static void live_slide_exec(void *var, int32_t v) {
     (void)var;
     lv_obj_set_style_translate_x(live_page, v, 0);
 }
+// On slide completion: resume the bezel dial (frozen during the switch for a
+// smooth slide) and re-arm it for the new session's activity.
+static void live_slide_done(lv_anim_t *a) {
+    (void)a;
+    s_switching = false;
+    model_lock();
+    activity_t act = g_model.activity;
+    model_unlock();
+    update_ring(act);
+}
 static void live_slide_in(void) {
     lv_anim_delete(&s_live_slide_var, live_slide_exec);
+    // Freeze the dial for the slide: stop the orbiting spinner and skip ring
+    // repaints (update_ring is gated on s_switching) so the slide blit owns the
+    // frame budget; live_slide_done resumes it once the new session is in.
+    s_switching = true;
+    s_working = false;
+    set_spinner_hidden(true);
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, &s_live_slide_var);
     lv_anim_set_exec_cb(&a, live_slide_exec);
-    lv_anim_set_values(&a, DISP_SIZE / 3, 0); // start offset right → settle centered
+    lv_anim_set_values(&a, s_slide_dir * (DISP_SIZE / 3), 0); // enter from dir → settle centered
     lv_anim_set_duration(&a, 280);
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_set_ready_cb(&a, live_slide_done);
     lv_anim_start(&a);
 }
 
 static void refresh_live(const model_t *m) {
     set_hidden(live_page, false);
 
-    update_ring(m->activity);
+    // Hold the dial frozen while a session slide is in flight; live_slide_done
+    // re-arms it for the new session once the slide settles.
+    if (!s_switching) update_ring(m->activity);
 
     // Branch/worktree hero, status-coloured (the colour IS the status readout now).
     // Falls back to the workspace dir name when there's no git branch (e.g. a
