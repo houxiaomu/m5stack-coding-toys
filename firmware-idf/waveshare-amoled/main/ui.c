@@ -109,7 +109,7 @@
 #define CARO_STRIP_BOTTOM 40 // strip y-inset from the page bottom (round-safe)
 
 // Rotating card identities (also the rotation order). Repo/branch identity is
-// shown persistently above the banner (identity_lbl), so it's not a card here.
+// shown persistently above the banner (branch_lbl/repo_lbl), not a card here.
 enum {
     BANNER_DIFF = 0,
     BANNER_MODEL,
@@ -177,7 +177,7 @@ static lv_obj_t *scr;
 static lv_obj_t *ring;
 static lv_obj_t *spinner; // working spinner: a dot orbiting the rim
 // live page
-static lv_obj_t *live_page, *activity_lbl, *identity_lbl;
+static lv_obj_t *live_page, *branch_lbl, *repo_lbl;
 static lv_obj_t *bar_fill[N_BARS], *bar_val[N_BARS];
 // overview dot strip (one dot per session, pinned to the live page bottom)
 static lv_obj_t *caro_strip, *caro_dot[MODEL_MAX_SESSIONS];
@@ -258,12 +258,16 @@ static uint32_t activity_color(activity_t a) {
     }
 }
 
-static const char *activity_text(activity_t a) {
+// Identity-hero colour. Semantically cleaner than activity_color(): idle/default
+// is WHITE (neutral) so GREEN means strictly WORKING. (activity_color reuses green
+// for the linked/idle fallback, which on the hero would make "working" and "idle"
+// look alike — the one distinction a glance most needs.)
+static uint32_t identity_color(activity_t a) {
     switch (a) {
-        case ACT_WORKING: return "WORKING";
-        case ACT_AWAITING: return "AWAITING";
-        case ACT_ATTENTION: return "ATTENTION";
-        default: return "ACTIVE";
+        case ACT_WORKING: return COL_WORKING;
+        case ACT_AWAITING: return COL_AWAITING;
+        case ACT_ATTENTION: return COL_ATTENTION;
+        default: return COL_WHITE;
     }
 }
 
@@ -632,8 +636,10 @@ static void build_banner_card(int slot) {
     label_fixed(lab, BANNER_W);
     lv_label_set_text(lab, "");
 
+    // 24, not 28: the branch hero on the live page owns 28 now, so the banner's
+    // rotating value sits one notch below it in the visual hierarchy.
     lv_obj_t *hero = lv_label_create(c);
-    label_set(hero, &lv_font_montserrat_28, COL_WHITE);
+    label_set(hero, &lv_font_montserrat_24, COL_WHITE);
     label_fixed(hero, BANNER_W);
     lv_label_set_text(hero, "");
 
@@ -896,21 +902,31 @@ static void build_live_page(void) {
                           LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_top(live_page, LIVE_TOP_PAD, 0);
 
-    activity_lbl = lv_label_create(live_page);
-    label_set(activity_lbl, &lv_font_montserrat_24, COL_WORKING);
-    label_fixed(activity_lbl, LIVE_LBL_W);
-    lv_label_set_text(activity_lbl, "WORKING");
+    // Branch/worktree identity is THE focal point: a status-coloured hero. The
+    // activity state it used to spell out ("WORKING"/…) is now carried purely by
+    // this colour (plus the bezel ring & per-session dots), so there's no status
+    // word competing for the focal spot. 28pt matches the banner's old hero; the
+    // banner hero drops to 24 below so the branch is the single largest glyph on
+    // screen. LONG_DOT end-truncates a long branch (its tail carries the least
+    // info); fixed width avoids a full-page relayout on text change.
+    branch_lbl = lv_label_create(live_page);
+    label_set(branch_lbl, &lv_font_montserrat_28, COL_WHITE);
+    lv_obj_set_width(branch_lbl, LIVE_LBL_W);
+    lv_obj_set_style_text_align(branch_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(branch_lbl, LV_LABEL_LONG_DOT);
+    lv_label_set_text(branch_lbl, "");
 
-    // Persistent session identity: "branch @ repo". Branch-first so same-repo
-    // worktrees (which share a repo name) are distinguished by the leading token.
-    // Fixed width + END dots: end-truncation naturally keeps the branch and clips
-    // the repo tail. Fixed width also avoids a full-page relayout on text change.
-    identity_lbl = lv_label_create(live_page);
-    label_set(identity_lbl, &lv_font_montserrat_16, COL_DIM);
-    lv_obj_set_width(identity_lbl, LIVE_LBL_W);
-    lv_obj_set_style_text_align(identity_lbl, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(identity_lbl, LV_LABEL_LONG_DOT);
-    lv_label_set_text(identity_lbl, "");
+    // Repo subline: subordinate project context under the branch hero. Dim, small,
+    // and tucked tight (the page's GAP_SM row gap is pulled back to GAP_TIGHT via a
+    // negative top margin) so branch+repo read as one unit. Hidden when unknown so
+    // it never leaves a gap.
+    repo_lbl = lv_label_create(live_page);
+    label_set(repo_lbl, &lv_font_montserrat_16, COL_DIM);
+    lv_obj_set_width(repo_lbl, LIVE_LBL_W);
+    lv_obj_set_style_text_align(repo_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(repo_lbl, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_margin_top(repo_lbl, GAP_TIGHT - GAP_SM, 0);
+    lv_label_set_text(repo_lbl, "");
 
     // Rotating info area between the identity line and the usage bars.
     build_banner(live_page);
@@ -1314,23 +1330,23 @@ static void live_slide_in(void) {
 static void refresh_live(const model_t *m) {
     set_hidden(live_page, false);
 
-    lv_obj_set_style_text_color(activity_lbl, lv_color_hex(activity_color(m->activity)), 0);
-    lv_label_set_text(activity_lbl, activity_text(m->activity));
     update_ring(m->activity);
 
-    // Persistent identity: "branch @ repo" (branch-first). Falls back to repo or
-    // branch alone, then the workspace dir name; hidden only when nothing is known
-    // (so it never leaves an empty gap).
-    char idbuf[88]; // two 40-char fields + " @ " + NUL
+    // Branch/worktree hero, status-coloured (the colour IS the status readout now).
+    // Falls back to the workspace dir name when there's no git branch (e.g. a
+    // non-git project dir); hidden only when nothing identifies the session.
+    const char *branch = m->git_branch[0] ? m->git_branch
+                       : (m->ws_name[0] ? m->ws_name : NULL);
+    lv_obj_set_style_text_color(branch_lbl, lv_color_hex(identity_color(m->activity)), 0);
+    set_hidden(branch_lbl, branch == NULL);
+    lv_label_set_text(branch_lbl, branch ? branch : "");
+
+    // Repo subline under the hero. Hidden when unknown, or when it would merely
+    // echo the branch fallback (the dir name already shown as the hero).
     const char *repo = m->git_repo[0] ? m->git_repo : NULL;
-    const char *branch = m->git_branch[0] ? m->git_branch : NULL;
-    if (branch && repo)     snprintf(idbuf, sizeof(idbuf), "%s @ %s", branch, repo);
-    else if (repo)          snprintf(idbuf, sizeof(idbuf), "%s", repo);
-    else if (branch)        snprintf(idbuf, sizeof(idbuf), "%s", branch);
-    else if (m->ws_name[0]) snprintf(idbuf, sizeof(idbuf), "%s", m->ws_name);
-    else                    idbuf[0] = '\0';
-    set_hidden(identity_lbl, idbuf[0] == '\0');
-    lv_label_set_text(identity_lbl, idbuf);
+    bool repo_dup = repo && branch && strcmp(repo, branch) == 0;
+    set_hidden(repo_lbl, repo == NULL || repo_dup);
+    lv_label_set_text(repo_lbl, (repo && !repo_dup) ? repo : "");
 
     // The model/cost/diff/git readouts now live in the auto-rotating banner,
     // driven independently by banner_tick_cb. Here we only own the anchored
