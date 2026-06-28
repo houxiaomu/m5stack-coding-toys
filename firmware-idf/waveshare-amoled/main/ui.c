@@ -102,6 +102,12 @@
 #define CARO_HANDOFF_MS 1500      // wait for host to echo selected==target after focus()
 #define CARO_HANDOFF_RETRIES 1    // re-send focus this many times before skipping a target
 
+// Swipe-to-switch: a horizontal flick on the live page hand-picks the adjacent
+// session. The focus send is coalesced so a fast multi-flick lands once on the
+// final session; the click LVGL delivers right after a gesture is eaten.
+#define SWIPE_COALESCE_MS 180     // collapse rapid flicks into one focus to the terminal session
+#define SWIPE_CLICK_GUARD_MS 400  // ignore a screen click within this long after a gesture
+
 // Overview dot strip on the live page: one dot per session, colour = activity.
 #define CARO_DOT_D 12        // base dot diameter
 #define CARO_DOT_CUR_D 18    // current (foreground) dot diameter
@@ -234,9 +240,16 @@ static int s_caro_prev_n = 0;
 // Live-page slide trigger: last foreground id we rendered + the slide anim anchor.
 static char s_live_fg[24] = "";
 static int s_live_slide_var = 0;
+// Swipe-to-switch state (LVGL-thread-only, like s_page). s_swipe_target_id is the
+// session the dot strip leads to while we coalesce/await the host echo; "" = none.
+static char s_swipe_target_id[24] = ""; // pending hand-picked target id (dot leads here)
+static int64_t s_swipe_send_at = 0;     // when to flush the coalesced focus (0 = nothing queued)
+static int64_t s_swipe_confirm_by = 0;  // give-up deadline after sending focus (0 = not waiting)
+static int64_t s_swipe_consumed_ms = 0; // last gesture time; guards the trailing click
 
 static void tick_cb(lv_timer_t *t);
 static void caro_pin(const char *id); // defined with the carousel helpers below
+static int fg_session_index(const model_t *m); // defined with the carousel helpers below
 
 // ================================================================== helpers ==
 static void set_hidden(lv_obj_t *o, bool hide) {
@@ -337,8 +350,47 @@ void ui_tap(void) {
     if (multi) s_page = (s_page == PAGE_LIVE) ? PAGE_SESSIONS : PAGE_LIVE;
 }
 
+// Horizontal flick on the live page → hand-pick the adjacent session. Left = next
+// (sessions[] order, dot highlight moves right), right = prev; ends wrap. Stages
+// the target for the dot strip + coalesced focus (tick_cb), and stamps a guard so
+// the click LVGL sends on release doesn't also fire ui_tap().
+static void on_scr_gesture(lv_event_t *e) {
+    (void)e;
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_active());
+    if (dir != LV_DIR_LEFT && dir != LV_DIR_RIGHT) return; // ignore vertical flicks
+    if (s_view != VIEW_LIVE) return;
+
+    char next_id[24] = "";
+    model_lock();
+    int count = g_model.session_count;
+    if (g_model.link == LINK_LIVE && count >= 2) {
+        // Advance from the pending target if a flick is already in flight, else
+        // from the live foreground — so rapid flicks step session-by-session.
+        int base = -1;
+        if (s_swipe_target_id[0]) {
+            for (int i = 0; i < count; i++)
+                if (!strcmp(g_model.sessions[i].id, s_swipe_target_id)) { base = i; break; }
+        }
+        if (base < 0) base = fg_session_index(&g_model);
+        if (base < 0) base = 0;
+        int step = (dir == LV_DIR_LEFT) ? 1 : (count - 1); // right = -1 (mod count)
+        int nxt = (base + step) % count;
+        snprintf(next_id, sizeof(next_id), "%s", g_model.sessions[nxt].id);
+    }
+    model_unlock();
+    if (!next_id[0]) return; // single session / not live → no-op (tap path untouched)
+
+    snprintf(s_swipe_target_id, sizeof(s_swipe_target_id), "%s", next_id);
+    int64_t now = esp_timer_get_time() / 1000;
+    s_swipe_send_at = now + SWIPE_COALESCE_MS; // flush once the flick settles
+    s_swipe_consumed_ms = now;                 // eat the trailing click
+}
+
 static void on_scr_click(lv_event_t *e) {
     (void)e;
+    // LVGL doesn't suppress the click after a gesture; swallow it within the guard
+    // window so a swipe never also opens the session list.
+    if ((esp_timer_get_time() / 1000) - s_swipe_consumed_ms < SWIPE_CLICK_GUARD_MS) return;
     ui_tap();
 }
 
@@ -1170,6 +1222,7 @@ void ui_init(void) {
     // SHORT_CLICKED (not CLICKED) so a long-press release doesn't also tap.
     lv_obj_add_event_cb(scr, on_scr_click, LV_EVENT_SHORT_CLICKED, NULL);
     lv_obj_add_event_cb(scr, on_scr_long_press, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(scr, on_scr_gesture, LV_EVENT_GESTURE, NULL);
 
     // Require a deliberate hold (LONG_PRESS_MS) before LV_EVENT_LONG_PRESSED
     // fires, so incidental touches don't toggle BLE pairing.
@@ -1291,10 +1344,17 @@ static void refresh_caro_strip(const model_t *m) {
     bool show = (m->session_count >= 2);
     set_hidden(caro_strip, !show);
     if (!show) return;
-    int fg = fg_session_index(m);
+    // The dot leads: while a swipe is in flight highlight its target; otherwise
+    // the host-selected foreground.
+    int cur_idx = -1;
+    if (s_swipe_target_id[0]) {
+        for (int i = 0; i < m->session_count; i++)
+            if (!strcmp(m->sessions[i].id, s_swipe_target_id)) { cur_idx = i; break; }
+    }
+    if (cur_idx < 0) cur_idx = fg_session_index(m);
     for (int i = 0; i < MODEL_MAX_SESSIONS; i++) {
         if (i < m->session_count) {
-            bool cur = (i == fg);
+            bool cur = (i == cur_idx);
             int d = cur ? CARO_DOT_CUR_D : CARO_DOT_D;
             lv_obj_set_size(caro_dot[i], d, d);
             lv_obj_set_style_bg_color(caro_dot[i],
@@ -1573,6 +1633,25 @@ static void tick_cb(lv_timer_t *t) {
     // the strip/slide follow hops); cheap — touches only small dot rects + a
     // transform. Re-arm s_live_fg when off the live view.
     if (target == VIEW_LIVE) {
+        // Swipe-to-switch lifecycle: flush the coalesced focus once the flick
+        // settles, clear the pending target when the host confirms, and snap the
+        // dot back if the host never echoes (target died / dropped).
+        if (s_swipe_target_id[0]) {
+            int64_t now = esp_timer_get_time() / 1000;
+            if (!strcmp(fg_session_id(&m), s_swipe_target_id)) {
+                s_swipe_target_id[0] = '\0'; // landed — host switched to our target
+                s_swipe_send_at = 0;
+                s_swipe_confirm_by = 0;
+            } else if (s_swipe_send_at && now >= s_swipe_send_at) {
+                proto_send_focus(s_swipe_target_id);
+                caro_pin(s_swipe_target_id);            // hold it like a row-tap pin
+                s_swipe_send_at = 0;
+                s_swipe_confirm_by = now + CARO_HANDOFF_MS;
+            } else if (!s_swipe_send_at && s_swipe_confirm_by && now >= s_swipe_confirm_by) {
+                s_swipe_target_id[0] = '\0'; // never confirmed → stop leading the dot
+                s_swipe_confirm_by = 0;
+            }
+        }
         refresh_caro_strip(&m);
         const char *fg = fg_session_id(&m);
         if (fg[0] && strcmp(fg, s_live_fg) != 0) {
