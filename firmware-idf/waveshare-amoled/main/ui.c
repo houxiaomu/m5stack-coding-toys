@@ -954,6 +954,20 @@ static void build_live_page(void) {
                           LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_top(live_page, LIVE_TOP_PAD, 0);
 
+    // Repo identity on top: subordinate project context. Dim, small. Placed ABOVE
+    // the branch hero so the (usually longer) branch lands on the dial's wider
+    // lower band and shows more before truncating. The GAP_SM row gap below repo is
+    // pulled back to GAP_TIGHT via a negative BOTTOM margin so repo+branch read as
+    // one unit; the tuck lives on repo (hidden when unknown) so the branch never
+    // inherits it — branch sits clean at the top when there's no repo.
+    repo_lbl = lv_label_create(live_page);
+    label_set(repo_lbl, &lv_font_montserrat_16, COL_DIM);
+    lv_obj_set_width(repo_lbl, LIVE_LBL_W);
+    lv_obj_set_style_text_align(repo_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(repo_lbl, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_margin_bottom(repo_lbl, GAP_TIGHT - GAP_SM, 0);
+    lv_label_set_text(repo_lbl, "");
+
     // Branch/worktree identity is THE focal point: a status-coloured hero. The
     // activity state it used to spell out ("WORKING"/…) is now carried purely by
     // this colour (plus the bezel ring & per-session dots), so there's no status
@@ -967,18 +981,6 @@ static void build_live_page(void) {
     lv_obj_set_style_text_align(branch_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(branch_lbl, LV_LABEL_LONG_DOT);
     lv_label_set_text(branch_lbl, "");
-
-    // Repo subline: subordinate project context under the branch hero. Dim, small,
-    // and tucked tight (the page's GAP_SM row gap is pulled back to GAP_TIGHT via a
-    // negative top margin) so branch+repo read as one unit. Hidden when unknown so
-    // it never leaves a gap.
-    repo_lbl = lv_label_create(live_page);
-    label_set(repo_lbl, &lv_font_montserrat_16, COL_DIM);
-    lv_obj_set_width(repo_lbl, LIVE_LBL_W);
-    lv_obj_set_style_text_align(repo_lbl, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(repo_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_margin_top(repo_lbl, GAP_TIGHT - GAP_SM, 0);
-    lv_label_set_text(repo_lbl, "");
 
     // Rotating info area between the identity line and the usage bars.
     build_banner(live_page);
