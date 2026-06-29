@@ -16,7 +16,9 @@
 #include "esp_lv_adapter.h"
 
 #include "battery.h"
+#include "buttons.h"
 #include "model.h"
+#include "power.h"
 #include "proto.h"
 #include "ui.h"
 
@@ -24,7 +26,7 @@ static const char *TAG = "m5sb";
 
 // Display/touch bring-up — mirrors the proven Waveshare BSP profile (50-line
 // partial buffer in PSRAM; full-frame would exceed the QSPI DMA budget).
-static lv_display_t *display_start(void) {
+static lv_display_t *display_start(esp_lcd_panel_handle_t *panel_out) {
     esp_lcd_panel_handle_t panel = NULL;
     esp_lcd_panel_io_handle_t io = NULL;
     bsp_display_config_t bcfg = {
@@ -66,6 +68,7 @@ static lv_display_t *display_start(void) {
 
     ESP_ERROR_CHECK(esp_lv_adapter_start());
     bsp_display_brightness_set(100);
+    if (panel_out) *panel_out = panel;
     return disp;
 }
 
@@ -100,7 +103,8 @@ void app_main(void) {
     ESP_ERROR_CHECK(bsp_i2c_init());
     battery_init(bsp_i2c_get_handle());
 
-    display_start();
+    esp_lcd_panel_handle_t panel = NULL;
+    display_start(&panel);
 
     if (esp_lv_adapter_lock(-1) == ESP_OK) {
         ui_init();
@@ -108,6 +112,11 @@ void app_main(void) {
     }
 
     proto_start();
+
+    // Physical buttons: PWR (AXP2101 PWRON) drives sleep/power-off + auto-sleep;
+    // BOOT (GPIO0) drives the session picker.
+    power_init(bsp_i2c_get_handle(), panel);
+    buttons_start();
 
     battery_poll(NULL); // seed before the first paint
     const esp_timer_create_args_t bt_args = {.callback = battery_poll, .name = "batt"};

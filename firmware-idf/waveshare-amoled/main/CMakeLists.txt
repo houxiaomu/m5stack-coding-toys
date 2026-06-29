@@ -6,6 +6,8 @@ idf_component_register(
         "ui.c"
         "ble.c"
         "battery.c"
+        "buttons.c"
+        "power.c"
     INCLUDE_DIRS "."
     REQUIRES
         waveshare__esp32_s3_touch_amoled_1_75
