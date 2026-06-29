@@ -1477,9 +1477,9 @@ static void live_slide_in(void) {
 static void refresh_live(const model_t *m) {
     set_hidden(live_page, false);
 
-    // Hold the dial frozen while a session slide is in flight; live_slide_done
-    // re-arms it for the new session once the slide settles.
-    if (!s_switching) update_ring(m->activity);
+    // Hold the dial frozen while a session switch is in flight — staged swipe or
+    // active slide; live_slide_done re-arms it for the new session once settled.
+    if (!s_switching && !s_swipe_target_id[0]) update_ring(m->activity);
 
     // Branch/worktree hero, status-coloured (the colour IS the status readout now).
     // Falls back to the workspace dir name when there's no git branch (e.g. a
@@ -1652,7 +1652,12 @@ static void tick_cb(lv_timer_t *t) {
     g_model.dirty = false;
     model_unlock();
 
-    s_pulse += (m.activity == ACT_ATTENTION) ? 0.45f : 0.22f;
+    // Freeze the breathing while a session switch is in flight — from the moment
+    // a swipe is staged (s_swipe_target_id), through the focus echo, to the end of
+    // the slide (s_switching). Otherwise the ATTENTION ring's full-rim opacity
+    // repaint every tick fights the slide blit + dot updates and reads as jank.
+    bool switch_in_flight = s_switching || s_swipe_target_id[0];
+    if (!switch_in_flight) s_pulse += (m.activity == ACT_ATTENTION) ? 0.45f : 0.22f;
 
 #if SHOW_FPS
     {
