@@ -126,6 +126,8 @@ async function main(): Promise<void> {
       helloTimeoutMs: 3000,
       pingIntervalMs: cfg.policy.ping_interval_ms,
       pingTimeoutMs: 3000,
+      // ~3 × 5s ≈ 15s, matching the firmware's own NoLink silence window.
+      maxMissedPings: 3,
     },
   })
 

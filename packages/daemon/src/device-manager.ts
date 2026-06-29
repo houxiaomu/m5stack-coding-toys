@@ -44,6 +44,7 @@ const DEFAULT_CFG: SessionConfig = {
   helloTimeoutMs: 3000,
   pingIntervalMs: 5000,
   pingTimeoutMs: 3000,
+  maxMissedPings: 3,
 }
 
 export class DeviceManager extends EventEmitter {

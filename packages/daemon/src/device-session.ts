@@ -24,12 +24,20 @@ export interface SessionConfig {
   helloTimeoutMs: number
   pingIntervalMs: number
   pingTimeoutMs: number
+  /**
+   * Consecutive missed pings before the link is declared dead and a disconnect
+   * is forced. Guards against half-open transports (e.g. a zombie BLE link
+   * where writes still resolve but the device never answers and `close` never
+   * fires) — without this the session pings into the void forever.
+   */
+  maxMissedPings: number
 }
 
 const DEFAULT_CONFIG: SessionConfig = {
   helloTimeoutMs: 3000,
   pingIntervalMs: 5000,
   pingTimeoutMs: 3000,
+  maxMissedPings: 3,
 }
 
 type PendingResolver = {
@@ -59,6 +67,8 @@ export class DeviceSession extends EventEmitter {
   private idCounter = 0
   private pingTimer: NodeJS.Timeout | null = null
   private destroyed = false
+  private disconnected = false
+  private missedPings = 0
 
   constructor(
     private readonly transport: Transport,
@@ -170,6 +180,9 @@ export class DeviceSession extends EventEmitter {
 
   private onData(chunk: Buffer): void {
     const lines = this.framer.push(chunk)
+    // Any decoded frame proves the link is alive — reset the missed-ping
+    // watchdog (mirrors the firmware's own "any frame refreshes lastRxMs").
+    if (lines.length > 0) this.missedPings = 0
     for (const line of lines) {
       // Protocol frames are JSON objects. Skip any non-`{` line silently —
       // e.g. device-side debug logging (M5CT_DBG emits `[dbg] …` lines on the
@@ -198,6 +211,8 @@ export class DeviceSession extends EventEmitter {
   }
 
   private onDisconnect(): void {
+    if (this.disconnected) return
+    this.disconnected = true
     log.warn('disconnect', { pending: this.pending.size })
     if (this.pingTimer) clearInterval(this.pingTimer)
     this.pingTimer = null
@@ -215,8 +230,31 @@ export class DeviceSession extends EventEmitter {
   private startPing(): void {
     this.pingTimer = setInterval(() => {
       this.request({ k: 'ping', p: {} }, this.cfg.pingTimeoutMs).catch(() => {
-        // missed ping; let the next disconnect handler decide
+        // A pong (or any inbound frame) resets missedPings in onData; only a
+        // genuine timeout reaches here. On a healthy link this never fires.
+        this.missedPings += 1
+        log.warn('ping missed', {
+          consecutive: this.missedPings,
+          max: this.cfg.maxMissedPings,
+        })
+        if (this.missedPings >= this.cfg.maxMissedPings) {
+          log.error('link dead — too many missed pings, forcing disconnect', {
+            missed: this.missedPings,
+          })
+          this.forceDisconnect()
+        }
       })
     }, this.cfg.pingIntervalMs)
+  }
+
+  /**
+   * Tear down a half-open link the transport never reported as closed: close
+   * the transport (so e.g. noble actually drops the zombie GATT connection)
+   * and run the disconnect path so the manager re-scans and reconnects.
+   */
+  private forceDisconnect(): void {
+    if (this.disconnected || this.destroyed) return
+    void this.transport.close()
+    this.onDisconnect()
   }
 }

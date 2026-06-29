@@ -1,6 +1,6 @@
 {
   "name": "m5ct",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "type": "module",
   "description": "M5Stack hardware status display for Claude Code",
   "license": "MIT",

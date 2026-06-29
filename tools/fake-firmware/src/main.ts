@@ -58,6 +58,8 @@ function handle(board: Board, raw: string): void {
     return
   }
   if (env.k === 'ping') {
+    // Simulate a zombie link: transport stays open but the device never pongs.
+    if (process.env.M5CT_FAKE_PING === 'noreply') return
     send(encode({ k: 'pong', ...(env.id ? { id: env.id } : {}), p: {} }))
     return
   }

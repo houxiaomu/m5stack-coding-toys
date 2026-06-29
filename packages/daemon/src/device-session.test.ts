@@ -14,6 +14,7 @@ describe('DeviceSession (against real fake-firmware subprocess)', () => {
       helloTimeoutMs: 2000,
       pingIntervalMs: 60000,
       pingTimeoutMs: 1000,
+      maxMissedPings: 3,
     })
     try {
       const info = await s.start()
@@ -31,6 +32,7 @@ describe('DeviceSession (against real fake-firmware subprocess)', () => {
       helloTimeoutMs: 2000,
       pingIntervalMs: 60000,
       pingTimeoutMs: 1000,
+      maxMissedPings: 3,
     })
     try {
       await s.start()
@@ -49,6 +51,7 @@ describe('DeviceSession (against real fake-firmware subprocess)', () => {
       helloTimeoutMs: 2000,
       pingIntervalMs: 60000,
       pingTimeoutMs: 1000,
+      maxMissedPings: 3,
     })
     try {
       await s.start()
@@ -61,12 +64,62 @@ describe('DeviceSession (against real fake-firmware subprocess)', () => {
     }
   }, 5000)
 
+  it('emits disconnect after maxMissedPings consecutive ping timeouts (zombie link)', async () => {
+    // Device keeps the transport open but stops answering pings — the exact
+    // half-open BLE failure where `close` never fires and the old code pinged
+    // into the void forever.
+    process.env.M5CT_FAKE_PING = 'noreply'
+    const t = new FakeStdioTransport([process.execPath, fakeFirmware])
+    const s = new DeviceSession(t, {
+      helloTimeoutMs: 2000,
+      pingIntervalMs: 50,
+      pingTimeoutMs: 40,
+      maxMissedPings: 3,
+    })
+    try {
+      await s.start()
+      const disc = new Promise<void>((r) => s.once('disconnect', () => r()))
+      await Promise.race([
+        disc,
+        new Promise((_, rej) =>
+          setTimeout(() => rej(new Error('watchdog did not force disconnect')), 2000),
+        ),
+      ])
+    } finally {
+      s.destroy()
+      process.env.M5CT_FAKE_PING = undefined
+    }
+  }, 5000)
+
+  it('does NOT disconnect while pings keep getting answered', async () => {
+    const t = new FakeStdioTransport([process.execPath, fakeFirmware])
+    const s = new DeviceSession(t, {
+      helloTimeoutMs: 2000,
+      pingIntervalMs: 30,
+      pingTimeoutMs: 25,
+      maxMissedPings: 3,
+    })
+    let disconnected = false
+    s.once('disconnect', () => {
+      disconnected = true
+    })
+    try {
+      await s.start()
+      // Run well past maxMissedPings worth of healthy ping cycles.
+      await new Promise((r) => setTimeout(r, 300))
+      expect(disconnected).toBe(false)
+    } finally {
+      s.destroy()
+    }
+  }, 5000)
+
   it('emits disconnect when subprocess exits', async () => {
     const t = new FakeStdioTransport([process.execPath, fakeFirmware])
     const s = new DeviceSession(t, {
       helloTimeoutMs: 2000,
       pingIntervalMs: 60000,
       pingTimeoutMs: 1000,
+      maxMissedPings: 3,
     })
     await s.start()
     const disc = new Promise<void>((r) => s.once('disconnect', () => r()))
