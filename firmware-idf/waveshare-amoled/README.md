@@ -33,6 +33,14 @@ RGB565 colour-banding. Three link states drive the layout:
   the host foregrounds it. Tap empty space to flip back.
 - **Notify overlay** — host `notify` shows a full-screen pulsing ring (red=high)
   with title/body; tap to dismiss (low/normal auto-dismiss after 8s).
+- **Gravity auto-rotate** (`main/orient.c`) — the onboard QMI8658 accelerometer
+  (I²C `0x6B`) is polled at 4 Hz; holding the board upside-down for ~1 s flips
+  the display 180° and mirrors the touch mapping to match. Lying flat is a dead
+  zone (< 0.35 g in-plane) that holds the current orientation. The CO5300 has no
+  MADCTL Y-mirror and the LVGL adapter won't rotate on panel interface OTHER, so
+  the flip wraps the adapter's flush_cb: reverse the partial band's pixel order
+  and mirror the area about the screen centre (even resolution keeps the panel's
+  even-alignment requirement intact).
 
 ## Physical buttons
 
@@ -167,4 +175,5 @@ Prebuilt binaries + manifest for `m5ct flash` live in
 | `main/proto.c/.h` | USB-Serial/JTAG transport, NDJSON + cJSON, link state machine, screenshot |
 | `main/ui.c/.h`    | the round "Halo" LVGL UI + `lv_snapshot` capture |
 | `main/model.h/.c` | shared status model + mutex (proto writer ↔ UI reader) |
+| `main/orient.c/.h` | QMI8658 accel polling + gravity 180° auto-rotate (display flush wrap + touch mirror) |
 | `partitions.csv`  | nvs + phy + 4 MB factory app (32 MB flash) |

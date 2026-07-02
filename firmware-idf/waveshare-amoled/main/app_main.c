@@ -18,6 +18,7 @@
 #include "battery.h"
 #include "buttons.h"
 #include "model.h"
+#include "orient.h"
 #include "power.h"
 #include "proto.h"
 #include "ui.h"
@@ -26,7 +27,8 @@ static const char *TAG = "m5sb";
 
 // Display/touch bring-up — mirrors the proven Waveshare BSP profile (50-line
 // partial buffer in PSRAM; full-frame would exceed the QSPI DMA budget).
-static lv_display_t *display_start(esp_lcd_panel_handle_t *panel_out) {
+static lv_display_t *display_start(esp_lcd_panel_handle_t *panel_out,
+                                   esp_lcd_touch_handle_t *tp_out) {
     esp_lcd_panel_handle_t panel = NULL;
     esp_lcd_panel_io_handle_t io = NULL;
     bsp_display_config_t bcfg = {
@@ -69,6 +71,7 @@ static lv_display_t *display_start(esp_lcd_panel_handle_t *panel_out) {
     ESP_ERROR_CHECK(esp_lv_adapter_start());
     bsp_display_brightness_set(100);
     if (panel_out) *panel_out = panel;
+    if (tp_out) *tp_out = tp;
     return disp;
 }
 
@@ -104,12 +107,16 @@ void app_main(void) {
     battery_init(bsp_i2c_get_handle());
 
     esp_lcd_panel_handle_t panel = NULL;
-    display_start(&panel);
+    esp_lcd_touch_handle_t tp = NULL;
+    lv_display_t *disp = display_start(&panel, &tp);
 
     if (esp_lv_adapter_lock(-1) == ESP_OK) {
         ui_init();
         esp_lv_adapter_unlock();
     }
+
+    // Gravity auto-rotate (QMI8658): flips display + touch when upside-down.
+    orient_init(bsp_i2c_get_handle(), disp, tp);
 
     proto_start();
 
