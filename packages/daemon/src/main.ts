@@ -158,7 +158,13 @@ async function main(): Promise<void> {
   server.setStatusLineHandler(
     (cc, meta) => void aggregator.ingest(cc as StatusLineInput, meta.ccPid),
   )
-  server.setHookEventHandler((ev, meta) => void aggregator.ingestHookEvent(ev, meta.sessionId))
+  server.setHookEventHandler(
+    (ev, meta) =>
+      void aggregator.ingestHookEvent(ev, meta.sessionId, {
+        type: meta.notificationType,
+        message: meta.message,
+      }),
+  )
   let lastActivityMs = Date.now()
   server.setActivityHandler(() => {
     lastActivityMs = Date.now()

@@ -17,8 +17,8 @@ describe('install patch', () => {
   it('proposes a statusLine command when settings.json absent', () => {
     const home = fakeHome()
     const patch = computeInstallPatch(home)
-    // statusLine + one entry per hook event (UserPromptSubmit, Stop, Notification)
-    expect(patch.added.length).toBe(4)
+    // statusLine + one entry per hook event (UserPromptSubmit, Stop, Notification, PostToolUse)
+    expect(patch.added.length).toBe(5)
     expect(patch.added[0]).toEqual({ field: 'statusLine', command: 'm5ct-statusline' })
     const statusLine = patch.after.statusLine as Record<string, unknown>
     expect(statusLine).toEqual({ type: 'command', command: 'm5ct-statusline', padding: 0 })
@@ -49,11 +49,39 @@ describe('install patch', () => {
         Notification: [
           { hooks: [{ type: 'command', command: 'm5ct-statusline --event Notification' }] },
         ],
+        PostToolUse: [
+          { hooks: [{ type: 'command', command: 'm5ct-statusline --event PostToolUse' }] },
+        ],
       },
     }
     writeFileSync(resolve(home, '.claude/settings.json'), JSON.stringify(existing))
     const patch = computeInstallPatch(home)
     expect(patch.added.length).toBe(0)
+  })
+
+  it('adds only the missing PostToolUse hook when upgrading an older install', () => {
+    const home = fakeHome()
+    mkdirSync(resolve(home, '.claude'), { recursive: true })
+    const existing = {
+      statusLine: { type: 'command', command: 'm5ct-statusline', padding: 0 },
+      hooks: {
+        UserPromptSubmit: [
+          { hooks: [{ type: 'command', command: 'm5ct-statusline --event UserPromptSubmit' }] },
+        ],
+        Stop: [{ hooks: [{ type: 'command', command: 'm5ct-statusline --event Stop' }] }],
+        Notification: [
+          { hooks: [{ type: 'command', command: 'm5ct-statusline --event Notification' }] },
+        ],
+      },
+    }
+    writeFileSync(resolve(home, '.claude/settings.json'), JSON.stringify(existing))
+    const patch = computeInstallPatch(home)
+    expect(patch.added).toEqual([
+      { field: 'hooks.PostToolUse', command: 'm5ct-statusline --event PostToolUse' },
+    ])
+    const hooks = patch.after.hooks as Record<string, unknown[]>
+    expect(hooks.PostToolUse).toHaveLength(1)
+    expect(hooks.Stop).toHaveLength(1)
   })
 
   it('chains an existing third-party statusLine instead of clobbering it', () => {
@@ -83,6 +111,9 @@ describe('install patch', () => {
           Stop: [{ hooks: [{ type: 'command', command: 'm5ct-statusline --event Stop' }] }],
           Notification: [
             { hooks: [{ type: 'command', command: 'm5ct-statusline --event Notification' }] },
+          ],
+          PostToolUse: [
+            { hooks: [{ type: 'command', command: 'm5ct-statusline --event PostToolUse' }] },
           ],
         },
       }),
@@ -123,7 +154,7 @@ describe('uninstall', () => {
 })
 
 describe('hooks patch', () => {
-  const events = ['UserPromptSubmit', 'Stop', 'Notification']
+  const events = ['UserPromptSubmit', 'Stop', 'Notification', 'PostToolUse']
 
   it('adds a hook group per event when none exist', () => {
     const after = computeHooksPatch({}, 'm5ct-statusline')

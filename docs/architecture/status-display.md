@@ -16,4 +16,29 @@ This fixed the "device flaps back to Waiting while a session is idle-but-alive" 
 
 Device `App` is a 3-state machine **NoLink / Linked / Live**. Protocol `STATES = ['active','idle']`. The activity badge (working / awaiting_input / needs_attention) is orthogonal, driven by CC hook events.
 
+## Activity classification (working / awaiting_input / needs_attention)
+
+Semantics: `working` = Claude is busy; `awaiting_input` = turn over, your move,
+nothing blocked; `needs_attention` = blocked mid-task on a human decision.
+Mapping lives in `SessionAggregator.hookToActivity` / `classifyNotification`
+(`packages/daemon/src/session-aggregator.ts`), fed by four CC hooks the shim
+registers (`m5ct-statusline --event <E>`):
+
+- `UserPromptSubmit` → working
+- `PostToolUse` → working (a tool ran ⇒ any pending permission was answered —
+  this is the de-escalation path that clears a stale red)
+- `Stop` → awaiting_input
+- `Notification` → classified by the structured `notification_type` the shim
+  forwards: `permission_prompt`/`elicitation_dialog` → needs_attention;
+  `idle_prompt` → awaiting_input (but never downgrades an existing
+  needs_attention — the permission prompt is still pending); `auth_success`/
+  `elicitation_complete`/`elicitation_response` → ignored; unknown →
+  needs_attention (message-text fallback for older CC versions).
+
+Activity is sticky across statusLine ticks; a hook that doesn't change the
+slot's activity is not re-pushed (PostToolUse fires on every tool call).
+Known trade-off: after approving a long-running tool, red clears only when
+that tool finishes (PostToolUse). Design doc:
+`docs/superpowers/specs/2026-07-02-activity-classification-redesign.md`.
+
 See also: [firmware-hardware-gotchas.md](firmware-hardware-gotchas.md) for the frame-size / serial caveats.

@@ -117,11 +117,15 @@ export class SessionAggregator {
   /** A Claude Code hook fired. Update the matching session and immediately
    * re-push so the badge reflects it without waiting for the next statusLine
    * tick. Unknown-session hooks are ignored to avoid wrong attribution. */
-  async ingestHookEvent(event: string, sessionId?: string): Promise<void> {
+  async ingestHookEvent(
+    event: string,
+    sessionId?: string,
+    notification?: HookNotification,
+  ): Promise<void> {
     const tracked = this.sessionForHook(sessionId)
     if (!tracked) return
-    const next = hookToActivity(event)
-    if (!next) return
+    const next = hookToActivity(event, tracked.activity, notification)
+    if (!next || next === tracked.activity) return
     tracked.activity = next
     if (tracked.lastFrame) {
       tracked.lastFrame = { ...tracked.lastFrame, activity: next }
@@ -345,17 +349,58 @@ function shortId(id: string): string {
   return id.length <= 8 ? id : id.slice(0, 8)
 }
 
-function hookToActivity(event: string): Activity | null {
+export interface HookNotification {
+  type?: string
+  message?: string
+}
+
+function hookToActivity(
+  event: string,
+  current: Activity,
+  notification?: HookNotification,
+): Activity | null {
   switch (event) {
     case 'UserPromptSubmit':
+      return 'working'
+    case 'PostToolUse':
+      // A tool actually ran — any pending permission prompt was answered.
       return 'working'
     case 'Stop':
       return 'awaiting_input'
     case 'Notification':
-      return 'needs_attention'
+      return classifyNotification(current, notification)
     default:
       return null
   }
+}
+
+/** Split Claude Code notifications into "blocked, needs a human" vs "turn is
+ * over, your move" using the structured notification_type, falling back to the
+ * message text for older Claude Code versions that only send `message`. */
+function classifyNotification(current: Activity, n?: HookNotification): Activity | null {
+  const type = n?.type ?? typeFromMessage(n?.message)
+  switch (type) {
+    case 'permission_prompt':
+    case 'elicitation_dialog':
+      return 'needs_attention'
+    case 'idle_prompt':
+      // An idle reminder must not clear a pending permission prompt.
+      return current === 'needs_attention' ? null : 'awaiting_input'
+    case 'auth_success':
+    case 'elicitation_complete':
+    case 'elicitation_response':
+      return null
+    default:
+      // Unknown notification: someone asked for the human. Err on the loud side.
+      return 'needs_attention'
+  }
+}
+
+function typeFromMessage(message?: string): string | undefined {
+  if (!message) return undefined
+  if (/waiting for your input/i.test(message)) return 'idle_prompt'
+  if (/permission/i.test(message)) return 'permission_prompt'
+  return undefined
 }
 
 /** Local-day key (NOT UTC) so the `today` bucket resets at local midnight. */

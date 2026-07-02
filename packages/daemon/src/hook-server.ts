@@ -9,6 +9,16 @@ function finiteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+export interface HookEventMeta {
+  sessionId?: string
+  notificationType?: string
+  message?: string
+}
+
 /**
  * Newline-delimited JSON over UNIX domain socket.
  *
@@ -25,7 +35,7 @@ export class HookServer {
     | ((cc: Record<string, unknown>, meta: { ccPid?: number; sessionId?: string }) => void)
     | null = null
   private onActivity: (() => void) | null = null
-  private onHookEvent: ((event: string, meta: { sessionId?: string }) => void) | null = null
+  private onHookEvent: ((event: string, meta: HookEventMeta) => void) | null = null
 
   constructor(private readonly socketPath: string) {}
 
@@ -33,7 +43,7 @@ export class HookServer {
     this.onActivity = fn
   }
 
-  setHookEventHandler(fn: (event: string, meta: { sessionId?: string }) => void): void {
+  setHookEventHandler(fn: (event: string, meta: HookEventMeta) => void): void {
     this.onHookEvent = fn
   }
 
@@ -116,9 +126,11 @@ export class HookServer {
     }
     const ev = (msg as { event?: unknown }).event
     if (typeof ev === 'string') {
-      const sessionId = (msg as { sessionId?: unknown }).sessionId
+      const m = msg as Record<string, unknown>
       this.onHookEvent?.(ev, {
-        sessionId: typeof sessionId === 'string' ? sessionId : undefined,
+        sessionId: optionalString(m.sessionId),
+        notificationType: optionalString(m.notificationType),
+        message: optionalString(m.message),
       })
       sock.end(`${JSON.stringify({ ok: true })}\n`)
       return

@@ -239,6 +239,101 @@ describe('SessionAggregator', () => {
     expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('working')
   })
 
+  it('maps idle_prompt notifications to awaiting_input, not needs_attention', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+    await agg.ingest({ model: { display_name: 'X' } })
+
+    await agg.ingestHookEvent('Notification', undefined, { type: 'idle_prompt' })
+    expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('awaiting_input')
+  })
+
+  it('maps permission_prompt and elicitation_dialog notifications to needs_attention', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+    await agg.ingest({ model: { display_name: 'X' } })
+
+    await agg.ingestHookEvent('Notification', undefined, { type: 'permission_prompt' })
+    expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('needs_attention')
+
+    await agg.ingestHookEvent('UserPromptSubmit')
+    await agg.ingestHookEvent('Notification', undefined, { type: 'elicitation_dialog' })
+    expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('needs_attention')
+  })
+
+  it('does not downgrade a pending needs_attention on an idle_prompt reminder', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+    await agg.ingest({ model: { display_name: 'X' } })
+    await agg.ingestHookEvent('Notification', undefined, { type: 'permission_prompt' })
+    sess.send.mockClear()
+
+    await agg.ingestHookEvent('Notification', undefined, { type: 'idle_prompt' })
+    expect(sess.send).not.toHaveBeenCalled()
+  })
+
+  it('ignores informational notification types entirely', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+    await agg.ingest({ model: { display_name: 'X' } })
+    sess.send.mockClear()
+
+    for (const type of ['auth_success', 'elicitation_complete', 'elicitation_response']) {
+      await agg.ingestHookEvent('Notification', undefined, { type })
+    }
+    expect(sess.send).not.toHaveBeenCalled()
+  })
+
+  it('falls back to message text when notification_type is missing', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+    await agg.ingest({ model: { display_name: 'X' } })
+
+    await agg.ingestHookEvent('Notification', undefined, {
+      message: 'Claude is waiting for your input',
+    })
+    expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('awaiting_input')
+
+    await agg.ingestHookEvent('Notification', undefined, {
+      message: 'Claude needs your permission to use Bash',
+    })
+    expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('needs_attention')
+  })
+
+  it('maps PostToolUse to working (clears needs_attention once the tool ran)', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+    await agg.ingest({ model: { display_name: 'X' } })
+    await agg.ingestHookEvent('Notification', undefined, { type: 'permission_prompt' })
+
+    await agg.ingestHookEvent('PostToolUse')
+    expect(sess.send.mock.calls.at(-1)[0].p.activity).toBe('working')
+  })
+
+  it('skips the re-push when a hook does not change activity', async () => {
+    const sess = fakeSession()
+    const agg = new SessionAggregator(() => sess as never, {
+      enrich: async () => undefined,
+    } as never)
+    await agg.ingest({ model: { display_name: 'X' } })
+    sess.send.mockClear()
+
+    await agg.ingestHookEvent('PostToolUse') // already working
+    expect(sess.send).not.toHaveBeenCalled()
+  })
+
   it('ignores hook events when no device session', async () => {
     const agg = new SessionAggregator(() => null, { enrich: async () => undefined } as never)
     await expect(agg.ingestHookEvent('Stop')).resolves.toBeUndefined()

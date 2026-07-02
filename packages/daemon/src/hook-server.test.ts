@@ -106,4 +106,29 @@ describe('HookServer hook events', () => {
     expect(JSON.parse(raw)).toEqual({ ok: true })
     expect(seen).toEqual([{ event: 'Notification', sessionId: 's2' }])
   })
+
+  it('forwards notificationType and message to the hook-event handler', async () => {
+    const path = sockPath()
+    srv = new HookServer(path)
+    const seen: Array<Record<string, string | undefined>> = []
+    srv.setHookEventHandler((event, meta) =>
+      seen.push({ event, notificationType: meta.notificationType, message: meta.message }),
+    )
+    await srv.listen()
+
+    const raw = await rpc(path, {
+      event: 'Notification',
+      sessionId: 's2',
+      notificationType: 'idle_prompt',
+      message: 'Claude is waiting for your input',
+    })
+    expect(JSON.parse(raw)).toEqual({ ok: true })
+    expect(seen).toEqual([
+      {
+        event: 'Notification',
+        notificationType: 'idle_prompt',
+        message: 'Claude is waiting for your input',
+      },
+    ])
+  })
 })

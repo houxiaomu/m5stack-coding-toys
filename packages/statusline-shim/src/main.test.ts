@@ -97,6 +97,7 @@ describe('--event flag', () => {
     expect(parseEventFlag(['--event', 'Stop'])).toBe('Stop')
     expect(parseEventFlag(['--event', 'UserPromptSubmit'])).toBe('UserPromptSubmit')
     expect(parseEventFlag(['--event', 'Notification'])).toBe('Notification')
+    expect(parseEventFlag(['--event', 'PostToolUse'])).toBe('PostToolUse')
   })
 
   it('returns undefined for missing or unknown events', () => {
@@ -106,7 +107,29 @@ describe('--event flag', () => {
   })
 
   it('builds a hook payload with optional sessionId', () => {
-    expect(buildHookPayload('Stop', 'sess-1')).toEqual({ event: 'Stop', sessionId: 'sess-1' })
-    expect(buildHookPayload('Stop')).toEqual({ event: 'Stop' })
+    expect(buildHookPayload('Stop', { session_id: 'sess-1' })).toEqual({
+      event: 'Stop',
+      sessionId: 'sess-1',
+    })
+    expect(buildHookPayload('Stop', {})).toEqual({ event: 'Stop' })
+  })
+
+  it('forwards notification_type and message on Notification payloads', () => {
+    expect(
+      buildHookPayload('Notification', {
+        session_id: 'sess-1',
+        notification_type: 'permission_prompt',
+        message: 'Claude needs your permission to use Bash',
+      }),
+    ).toEqual({
+      event: 'Notification',
+      sessionId: 'sess-1',
+      notificationType: 'permission_prompt',
+      message: 'Claude needs your permission to use Bash',
+    })
+    // non-string junk is dropped, not forwarded
+    expect(
+      buildHookPayload('Notification', { notification_type: 42 as never, message: {} as never }),
+    ).toEqual({ event: 'Notification' })
   })
 })

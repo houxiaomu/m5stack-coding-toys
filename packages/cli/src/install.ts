@@ -63,7 +63,7 @@ export function computeInstallPatch(
   return { path, before, after, added, chainedCommand }
 }
 
-export const HOOK_EVENTS = ['UserPromptSubmit', 'Stop', 'Notification'] as const
+export const HOOK_EVENTS = ['UserPromptSubmit', 'Stop', 'Notification', 'PostToolUse'] as const
 
 interface HookGroup {
   hooks: { type: string; command: string }[]
@@ -74,7 +74,7 @@ function hookCommand(bin: string, event: string): string {
   return `${bin} --event ${event}`
 }
 
-/** Merge our three CC hooks into an existing `hooks` object, preserving others
+/** Merge our CC hooks into an existing `hooks` object, preserving others
  *  and never duplicating our own group. Returns the new hooks object. */
 export function computeHooksPatch(
   before: Record<string, unknown>,

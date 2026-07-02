@@ -13,6 +13,9 @@ interface CC {
   model?: { display_name?: string }
   context_window?: { used_percentage?: number }
   cost?: { total_cost_usd?: number }
+  // Hook-event stdin extras (Notification):
+  notification_type?: string
+  message?: string
 }
 
 export function buildDaemonPayload(cc: CC, ccPid: number | null): Record<string, unknown> {
@@ -22,7 +25,7 @@ export function buildDaemonPayload(cc: CC, ccPid: number | null): Record<string,
   return p
 }
 
-const HOOK_EVENTS = ['UserPromptSubmit', 'Stop', 'Notification'] as const
+const HOOK_EVENTS = ['UserPromptSubmit', 'Stop', 'Notification', 'PostToolUse'] as const
 type HookEvent = (typeof HOOK_EVENTS)[number]
 
 /** Extract a valid `--event <Name>` value, or undefined. */
@@ -33,9 +36,14 @@ export function parseEventFlag(args: readonly string[]): HookEvent | undefined {
   return (HOOK_EVENTS as readonly string[]).includes(v ?? '') ? (v as HookEvent) : undefined
 }
 
-/** The NDJSON frame the daemon expects for a hook event. */
-export function buildHookPayload(event: HookEvent, sessionId?: string): Record<string, unknown> {
-  return sessionId ? { event, sessionId } : { event }
+/** The NDJSON frame the daemon expects for a hook event. Forwards the
+ * Notification stdin extras so the daemon can classify the notification. */
+export function buildHookPayload(event: HookEvent, cc: CC): Record<string, unknown> {
+  const p: Record<string, unknown> = { event }
+  if (typeof cc.session_id === 'string') p.sessionId = cc.session_id
+  if (typeof cc.notification_type === 'string') p.notificationType = cc.notification_type
+  if (typeof cc.message === 'string') p.message = cc.message
+  return p
 }
 
 export function buildSummary(cc: CC): string {
@@ -93,7 +101,7 @@ async function main(): Promise<void> {
   }
   const sockPath = process.env.M5CT_SOCKET ?? `${process.env.HOME}/.m5stack-coding-toys/daemon.sock`
   const payload = eventName
-    ? buildHookPayload(eventName, cc.session_id)
+    ? buildHookPayload(eventName, cc)
     : buildDaemonPayload(cc, currentClaudePid())
   try {
     const sock = connect(sockPath)
