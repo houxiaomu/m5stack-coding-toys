@@ -36,8 +36,11 @@ RGB565 colour-banding. Three link states drive the layout:
 - **Gravity auto-rotate** (`main/orient.c`) — the onboard QMI8658 accelerometer
   (I²C `0x6B`) is polled at 4 Hz; holding the board upside-down for ~1 s flips
   the display 180° and mirrors the touch mapping to match. Lying flat is a dead
-  zone (< 0.35 g in-plane) that settles back to the normal orientation after
-  ~3 s (a flat board can't meaningfully be "upside-down"). The CO5300 has no
+  zone (< 0.35 g in-plane) where gravity can't see in-plane rotation, so the
+  last latched orientation holds — putting the board down passes through the
+  tilt band, which latches the right way up for the resting pose — and the
+  latch persists in NVS across reboots. The panel's native render direction is
+  readable with the USB cable at the bottom (UI-up = accel +X). The CO5300 has no
   MADCTL Y-mirror and the LVGL adapter won't rotate on panel interface OTHER, so
   the flip wraps the adapter's flush_cb: reverse the partial band's pixel order
   and mirror the area about the screen centre (even resolution keeps the panel's

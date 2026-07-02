@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_lv_adapter.h"
+#include "nvs.h"
 
 // For reading the adapter-installed flush_cb (LVGL 9 has a setter but no
 // getter); the private header is LVGL's sanctioned escape hatch.
@@ -34,11 +35,12 @@ static const char *TAG = "orient";
 #define QMI_CTRL2_2G_62HZ 0x07 // ±2 g, 62.5 Hz — 16384 LSB/g
 
 // Which raw accel axis points toward the UI's physical "up" in the normal
-// orientation (0=X 1=Y 2=Z, with sign). Read empirically off the ORIENT_DEBUG
-// overlay with the board held upright: ax=-15151 ay=-481 az=4577, i.e. +X
-// points at the UI bottom, so UI-up = -X.
+// orientation (0=X 1=Y 2=Z, with sign). Photo-verified anchor: the panel's
+// native render direction is readable with the USB cable at the BOTTOM, and
+// held that way the ORIENT_DEBUG overlay reads ax=+14668 — so UI-up = +X.
+// (First calibration got this backwards: the board was held cable-up.)
 #define ORIENT_UP_AXIS 0
-#define ORIENT_UP_SIGN (-1)
+#define ORIENT_UP_SIGN (+1)
 
 // Flip only on a clear, sustained signal: the in-plane gravity component must
 // exceed the dead zone (board lying flat keeps its current orientation) for
@@ -46,10 +48,6 @@ static const char *TAG = "orient";
 #define POLL_PERIOD_US (250 * 1000)
 #define FLIP_THRESHOLD 5734 // 0.35 g in ±2 g counts
 #define FLIP_CONFIRM_POLLS 4
-// Lying flat can't be "upside-down": after a sustained stay in the dead zone
-// revert to normal, so putting the board down from a flipped hold doesn't
-// leave the desk view latched at 180°.
-#define FLAT_REVERT_POLLS 12
 
 static i2c_master_dev_handle_t s_dev;
 static lv_display_t *s_disp;
@@ -57,7 +55,7 @@ static esp_lcd_touch_handle_t s_tp;
 static lv_display_flush_cb_t s_orig_flush;
 static volatile bool s_flipped;
 static int s_pending_polls;
-static int s_flat_polls;
+static nvs_handle_t s_nvs;
 
 #if ORIENT_DEBUG
 static lv_obj_t *s_dbg_lbl;
@@ -125,6 +123,13 @@ static void apply_flip(bool flipped) {
     lv_obj_invalidate(lv_display_get_layer_top(s_disp));
     lv_obj_invalidate(lv_display_get_layer_sys(s_disp));
     esp_lv_adapter_unlock();
+    // Persist so a reboot while lying flat (where gravity is mute about the
+    // in-plane orientation, e.g. right after a reflash) restores the latch.
+    // Outside the LVGL lock: nvs_commit can stall on flash writes.
+    if (s_nvs) {
+        nvs_set_u8(s_nvs, "flip", flipped ? 1 : 0);
+        nvs_commit(s_nvs);
+    }
     ESP_LOGI(TAG, "orientation -> %s", flipped ? "flipped" : "normal");
 }
 
@@ -140,15 +145,12 @@ static void orient_poll(void *arg) {
     } else if (up < -FLIP_THRESHOLD) {
         want = true;
     } else {
-        // Dead zone (lying flat): hold briefly, then settle back to normal.
+        // Dead zone (lying flat): gravity can't see in-plane rotation, so hold
+        // the latched orientation. Putting the board down passes through the
+        // tilt band, which latches the right way up for the resting pose.
         s_pending_polls = 0;
-        if (++s_flat_polls >= FLAT_REVERT_POLLS) {
-            s_flat_polls = 0;
-            if (s_flipped) apply_flip(false);
-        }
         goto dbg;
     }
-    s_flat_polls = 0;
 
     if (want == s_flipped) {
         s_pending_polls = 0;
@@ -208,6 +210,10 @@ bool orient_init(i2c_master_bus_handle_t bus, lv_display_t *disp, esp_lcd_touch_
     lv_label_set_text(s_dbg_lbl, "orient?");
 #endif
     esp_lv_adapter_unlock();
+
+    if (nvs_open("orient", NVS_READWRITE, &s_nvs) != ESP_OK) s_nvs = 0;
+    uint8_t persisted = 0;
+    if (s_nvs && nvs_get_u8(s_nvs, "flip", &persisted) == ESP_OK && persisted) apply_flip(true);
 
     const esp_timer_create_args_t targs = {.callback = orient_poll, .name = "orient"};
     esp_timer_handle_t t;
