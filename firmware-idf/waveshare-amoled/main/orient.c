@@ -46,6 +46,10 @@ static const char *TAG = "orient";
 #define POLL_PERIOD_US (250 * 1000)
 #define FLIP_THRESHOLD 5734 // 0.35 g in ±2 g counts
 #define FLIP_CONFIRM_POLLS 4
+// Lying flat can't be "upside-down": after a sustained stay in the dead zone
+// revert to normal, so putting the board down from a flipped hold doesn't
+// leave the desk view latched at 180°.
+#define FLAT_REVERT_POLLS 12
 
 static i2c_master_dev_handle_t s_dev;
 static lv_display_t *s_disp;
@@ -53,6 +57,7 @@ static esp_lcd_touch_handle_t s_tp;
 static lv_display_flush_cb_t s_orig_flush;
 static volatile bool s_flipped;
 static int s_pending_polls;
+static int s_flat_polls;
 
 #if ORIENT_DEBUG
 static lv_obj_t *s_dbg_lbl;
@@ -135,9 +140,15 @@ static void orient_poll(void *arg) {
     } else if (up < -FLIP_THRESHOLD) {
         want = true;
     } else {
-        s_pending_polls = 0; // dead zone (lying flat): hold current orientation
+        // Dead zone (lying flat): hold briefly, then settle back to normal.
+        s_pending_polls = 0;
+        if (++s_flat_polls >= FLAT_REVERT_POLLS) {
+            s_flat_polls = 0;
+            if (s_flipped) apply_flip(false);
+        }
         goto dbg;
     }
+    s_flat_polls = 0;
 
     if (want == s_flipped) {
         s_pending_polls = 0;
